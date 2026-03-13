@@ -140,32 +140,19 @@ body {
   white-space: nowrap;
 }
 
-.difficulty-badge {
+.status-dot {
   flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
-.difficulty-badge.easy {
-  background: #d4edda;
-  color: #155724;
+.status-dot.accepted {
+  background: #34a853;
 }
 
-.difficulty-badge.medium {
-  background: #fff3cd;
-  color: #856404;
-}
-
-.difficulty-badge.hard {
-  background: #f8d7da;
-  color: #721c24;
-}
-
-.difficulty-badge.unknown {
-  background: #e2e3e5;
-  color: #495057;
+.status-dot.in-progress {
+  background: #f5a623;
 }
 
 .attempt-count {

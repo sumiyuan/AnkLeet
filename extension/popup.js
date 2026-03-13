@@ -59,11 +59,13 @@ function aggregateTodayActivity(submissions) {
       bySlug.set(slug, {
         titleSlug: slug,
         title: sub.title || slug.replace(/-/g, ' '),
-        difficulty: sub.difficulty,
+        accepted: false,
         attempts: 0
       });
     }
-    bySlug.get(slug).attempts += 1;
+    const entry = bySlug.get(slug);
+    entry.attempts += 1;
+    if (sub.statusDisplay === 'Accepted') entry.accepted = true;
   }
 
   return Array.from(bySlug.values()).sort((a, b) => b.attempts - a.attempts);
@@ -98,13 +100,8 @@ function renderTodayActivity(submissions) {
     titleSpan.title = displayTitle; // tooltip for truncated text
 
     const badgeSpan = document.createElement('span');
-    const diffLower = (item.difficulty || '').toLowerCase();
-    let diffClass = 'unknown';
-    if (diffLower === 'easy') diffClass = 'easy';
-    else if (diffLower === 'medium') diffClass = 'medium';
-    else if (diffLower === 'hard') diffClass = 'hard';
-    badgeSpan.className = 'difficulty-badge ' + diffClass;
-    badgeSpan.textContent = item.difficulty || '?';
+    badgeSpan.className = 'status-dot ' + (item.accepted ? 'accepted' : 'in-progress');
+    badgeSpan.title = item.accepted ? 'Accepted' : 'In Progress';
 
     const attemptsSpan = document.createElement('span');
     attemptsSpan.className = 'attempt-count';
@@ -204,7 +201,7 @@ function renderReviewQueue(cards) {
     link.title = displayTitle;
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      chrome.tabs.create({ url: 'https://leetcode.com/problems/' + card.titleSlug + '/' });
+      chrome.tabs.create({ url: 'https://leetcode.com/problems/' + card.titleSlug + '/?leetreminder=review' });
     });
 
     titleRow.appendChild(link);

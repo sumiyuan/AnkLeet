@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Automatically track every LeetCode submission",
   "permissions": ["storage", "alarms", "notifications"],
-  "host_permissions": ["https://leetcode.com/*"],
+  "host_permissions": ["https://leetcode.com/*", "https://neetcode.io/*"],
   "background": {
     "service_worker": "background.js"
   },

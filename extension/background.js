@@ -372,12 +372,21 @@ async function saveSubmission(data, tabId) {
   const saved = await addRecord(db, record);
   if (saved !== null) {
     if (record.statusDisplay === 'Accepted') {
-      maybeCreateCard(db, record.titleSlug).catch(err => {
+      try {
+        await maybeCreateCard(db, record.titleSlug);
+      } catch (err) {
         console.warn('[LeetReminder] maybeCreateCard failed', err);
-      });
-    }
-    if (tabId !== null) {
-      await notifyTab(tabId);
+      }
+      // Show rating dialog on the LeetCode page for accepted submissions
+      if (tabId !== null) {
+        await notifyTab(tabId, {
+          type: 'SHOW_RATING',
+          titleSlug: record.titleSlug,
+          title: record.title
+        });
+      }
+    } else if (tabId !== null) {
+      await notifyTab(tabId, { type: 'SHOW_TOAST' });
     }
   }
 }
@@ -447,9 +456,9 @@ function addRecord(database, record) {
 /**
  * Sends a SHOW_TOAST message to the specified tab.
  */
-async function notifyTab(tabId) {
+async function notifyTab(tabId, message) {
   try {
-    await chrome.tabs.sendMessage(tabId, { type: 'SHOW_TOAST' });
+    await chrome.tabs.sendMessage(tabId, message);
   } catch {
     // Tab navigated away or was closed — ignore
   }
@@ -496,9 +505,16 @@ async function rateReview(database, titleSlug, ratingName) {
     reviewedAt: now.toISOString()
   };
 
+  // Enforce minimum 1-day interval — FSRS default learning steps are minutes,
+  // which makes sense for flashcards but not for re-solving LeetCode problems.
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  const effectiveDue = newCard.due < tomorrow ? tomorrow : newCard.due;
+
   const updatedCard = {
     titleSlug,
-    due: newCard.due.toISOString(),
+    due: effectiveDue.toISOString(),
     stability: newCard.stability,
     difficulty: newCard.difficulty,
     elapsed_days: newCard.elapsed_days,

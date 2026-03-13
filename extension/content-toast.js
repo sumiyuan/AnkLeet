@@ -1,25 +1,19 @@
-// LeetReminder — Toast Notification (content-toast.js)
+// LeetReminder — Toast & Rating Dialog (content-toast.js)
 // World: ISOLATED (default) — runs at document_end so document.body is ready.
-// Displays a brief Shadow DOM toast in the bottom-right corner when the
-// service worker confirms a submission has been saved.
-//
-// Shadow DOM prevents LeetCode's styles from bleeding into the toast.
+// Shows a brief toast for wrong submissions, or a rating dialog for accepted ones.
+// Shadow DOM prevents LeetCode's styles from bleeding in.
 
 /**
  * Shows a temporary toast notification in the bottom-right corner.
  * Auto-dismisses after ~2 seconds with a fade transition.
- *
- * @param {string} message - Text to display in the toast.
  */
 function showToast(message) {
-  // Remove any pre-existing toast to avoid stacking.
-  document.getElementById('leetreminder-toast-host')?.remove();
+  removeHost();
 
   const host = document.createElement('div');
   host.id = 'leetreminder-toast-host';
   document.body.appendChild(host);
 
-  // Closed shadow root — page scripts cannot access toast internals.
   const shadow = host.attachShadow({ mode: 'closed' });
 
   const style = document.createElement('style');
@@ -54,18 +48,312 @@ function showToast(message) {
   shadow.appendChild(style);
   shadow.appendChild(toast);
 
-  // Begin fade-out at 2 000 ms, remove element 300 ms later (after transition).
   setTimeout(function () {
     toast.classList.add('fade');
-    setTimeout(function () {
-      host.remove();
-    }, 300);
+    setTimeout(function () { host.remove(); }, 300);
   }, 2000);
 }
 
-// Listen for SHOW_TOAST messages from the service worker.
+/**
+ * Shows a rating dialog for the user to rate how the review went.
+ * Sends RATE_REVIEW to the background when a button is clicked.
+ */
+function showRatingDialog(titleSlug, title) {
+  removeHost();
+
+  const host = document.createElement('div');
+  host.id = 'leetreminder-toast-host';
+  document.body.appendChild(host);
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+
+  const style = document.createElement('style');
+  style.textContent = `
+    .overlay {
+      all: initial;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 2147483647;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .dialog {
+      background: #282828;
+      color: #e0e0e0;
+      border-radius: 12px;
+      padding: 24px 28px;
+      max-width: 360px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      text-align: center;
+    }
+    .dialog-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #ffffff;
+    }
+    .dialog-problem {
+      font-size: 13px;
+      color: #a0a0a0;
+      margin-bottom: 18px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dialog-prompt {
+      font-size: 13px;
+      color: #b0b0b0;
+      margin-bottom: 14px;
+    }
+    .rating-buttons {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+    .rating-btn {
+      all: initial;
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      color: #fff;
+      box-sizing: border-box;
+    }
+    .rating-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+    .rating-btn:active { transform: translateY(0); }
+    .rating-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+    .rating-btn[data-rating="Again"] { background: #e05c5c; }
+    .rating-btn[data-rating="Hard"]  { background: #d4893f; }
+    .rating-btn[data-rating="Good"]  { background: #4caf50; }
+    .rating-btn[data-rating="Easy"]  { background: #42a5f5; }
+    .skip-btn {
+      all: initial;
+      display: inline-block;
+      margin-top: 12px;
+      padding: 4px 8px;
+      font-family: system-ui, sans-serif;
+      font-size: 12px;
+      color: #666;
+      cursor: pointer;
+      background: none;
+    }
+    .skip-btn:hover { color: #999; }
+  `;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'dialog';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'dialog-title';
+  titleEl.textContent = 'Submission Captured';
+
+  const problemEl = document.createElement('div');
+  problemEl.className = 'dialog-problem';
+  const displayTitle = title || titleSlug.replace(/-/g, ' ');
+  problemEl.textContent = displayTitle;
+
+  const promptEl = document.createElement('div');
+  promptEl.className = 'dialog-prompt';
+  promptEl.textContent = 'How did it go?';
+
+  const buttonsEl = document.createElement('div');
+  buttonsEl.className = 'rating-buttons';
+
+  const ratings = ['Again', 'Hard', 'Good', 'Easy'];
+  for (const rating of ratings) {
+    const btn = document.createElement('button');
+    btn.className = 'rating-btn';
+    btn.dataset.rating = rating;
+    btn.textContent = rating;
+    btn.addEventListener('click', function () {
+      // Disable all buttons
+      buttonsEl.querySelectorAll('.rating-btn').forEach(function (b) { b.disabled = true; });
+      skipBtn.disabled = true;
+
+      chrome.runtime.sendMessage(
+        { type: 'RATE_REVIEW', payload: { titleSlug: titleSlug, rating: rating } },
+        function () {
+          // Show brief confirmation then dismiss
+          promptEl.textContent = 'Rated ' + rating + '!';
+          setTimeout(function () { host.remove(); }, 600);
+        }
+      );
+    });
+    buttonsEl.appendChild(btn);
+  }
+
+  const skipBtn = document.createElement('button');
+  skipBtn.className = 'skip-btn';
+  skipBtn.textContent = 'Skip';
+  skipBtn.addEventListener('click', function () {
+    host.remove();
+  });
+
+  dialog.appendChild(titleEl);
+  dialog.appendChild(problemEl);
+  dialog.appendChild(promptEl);
+  dialog.appendChild(buttonsEl);
+  dialog.appendChild(skipBtn);
+  overlay.appendChild(dialog);
+
+  shadow.appendChild(style);
+  shadow.appendChild(overlay);
+
+  // Close on overlay click (outside dialog)
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) host.remove();
+  });
+}
+
+/**
+ * Removes any existing toast/dialog host element.
+ */
+function removeHost() {
+  document.getElementById('leetreminder-toast-host')?.remove();
+}
+
+/**
+ * If the page was opened via a review link (#leetreminder-review),
+ * blur the code editor until the user clicks "Reveal".
+ * Uses a MutationObserver to wait for the Monaco editor to mount.
+ */
+function maybeBlurEditor() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('leetreminder') !== 'review') return;
+
+  // Clean up the param so refreshing doesn't re-trigger
+  params.delete('leetreminder');
+  const cleanSearch = params.toString();
+  const cleanUrl = window.location.pathname + (cleanSearch ? '?' + cleanSearch : '');
+  history.replaceState(null, '', cleanUrl);
+
+  const BLUR_HOST_ID = 'leetreminder-blur-host';
+
+  function applyBlur(editorEl) {
+    // Don't double-apply
+    if (document.getElementById(BLUR_HOST_ID)) return;
+
+    const host = document.createElement('div');
+    host.id = BLUR_HOST_ID;
+    document.body.appendChild(host);
+
+    const shadow = host.attachShadow({ mode: 'closed' });
+
+    const style = document.createElement('style');
+    style.textContent = `
+      .blur-overlay {
+        all: initial;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        inset: 0;
+        background: rgba(30, 30, 30, 0.6);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 10;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .blur-message {
+        color: #e0e0e0;
+        font-size: 15px;
+        font-weight: 500;
+        margin-bottom: 16px;
+        text-align: center;
+        padding: 0 20px;
+      }
+      .reveal-btn {
+        all: initial;
+        display: inline-block;
+        padding: 10px 24px;
+        border-radius: 8px;
+        background: #4caf50;
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, transform 0.1s;
+      }
+      .reveal-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+      .reveal-btn:active { transform: translateY(0); }
+    `;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'blur-overlay';
+
+    const msg = document.createElement('div');
+    msg.className = 'blur-message';
+    msg.textContent = 'Reset your code before revealing';
+
+    const btn = document.createElement('button');
+    btn.className = 'reveal-btn';
+    btn.textContent = 'Reveal Code';
+    btn.addEventListener('click', function () {
+      host.remove();
+    });
+
+    overlay.appendChild(msg);
+    overlay.appendChild(btn);
+    shadow.appendChild(style);
+    shadow.appendChild(overlay);
+
+    // Position the overlay on top of the editor container
+    const rect = editorEl.getBoundingClientRect();
+    editorEl.style.position = editorEl.style.position || 'relative';
+
+    // Insert overlay as a sibling positioned over the editor
+    editorEl.style.position = 'relative';
+    editorEl.appendChild(host);
+    host.style.position = 'absolute';
+    host.style.inset = '0';
+    host.style.zIndex = '10';
+  }
+
+  // Wait for the Monaco editor container to appear
+  let attempts = 0;
+  const maxAttempts = 50; // ~10 seconds
+
+  function tryFind() {
+    const editor = document.querySelector('.monaco-editor')?.closest('[class*="editor"]')?.parentElement
+      || document.querySelector('.monaco-editor')?.parentElement;
+    if (editor) {
+      applyBlur(editor);
+      return;
+    }
+    attempts++;
+    if (attempts < maxAttempts) {
+      setTimeout(tryFind, 200);
+    }
+  }
+
+  // Start looking once DOM is interactive
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryFind);
+  } else {
+    tryFind();
+  }
+}
+
+maybeBlurEditor();
+
+// Listen for messages from the service worker.
 chrome.runtime.onMessage.addListener(function (msg) {
   if (msg.type === 'SHOW_TOAST') {
-    showToast('✓ Submission captured');
+    showToast('\u2713 Submission captured');
+  } else if (msg.type === 'SHOW_RATING') {
+    showRatingDialog(msg.titleSlug, msg.title);
   }
 });
