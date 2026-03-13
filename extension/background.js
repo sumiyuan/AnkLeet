@@ -2,9 +2,16 @@
 // ALL event listeners MUST be registered at the top level (global scope).
 // Never register listeners inside callbacks or async functions.
 
+importScripts('lib/ts-fsrs.umd.js');
+// UMD exposes: FSRS.createEmptyCard, FSRS.fsrs, FSRS.Rating, FSRS.State
+const { createEmptyCard, fsrs, Rating, State } = FSRS;
+
 // Module-scope DB reference — persists for the lifetime of this worker instance.
 let db = null;
-openDatabase().then(database => { db = database; }).catch(() => {});
+openDatabase().then(database => {
+  db = database;
+  db.onversionchange = () => db.close();
+}).catch(() => {});
 
 // --- Top-level event listeners ---
 
@@ -23,27 +30,94 @@ chrome.runtime.onInstalled.addListener(() => {
 // --- Functions ---
 
 /**
- * Opens (or creates) the 'leetreminder' IndexedDB at version 1.
+ * Opens (or creates) the 'leetreminder' IndexedDB at version 2.
+ * Migrates from version 1 (submissions only) to version 2 (adds cards + reviewLogs).
  */
 function openDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('leetreminder', 1);
+    const request = indexedDB.open('leetreminder', 2);
+
+    request.onblocked = () => {}; // silently wait for other tabs to yield
 
     request.onupgradeneeded = (event) => {
       const database = event.target.result;
+      const oldVersion = event.oldVersion;
 
-      const store = database.createObjectStore('submissions', {
-        keyPath: 'id',
-        autoIncrement: true
-      });
+      if (oldVersion < 1) {
+        // Original submissions store (needed for fresh installs with no prior DB)
+        const store = database.createObjectStore('submissions', {
+          keyPath: 'id',
+          autoIncrement: true
+        });
+        store.createIndex('submissionId', 'submissionId', { unique: true });
+        store.createIndex('titleSlug', 'titleSlug', { unique: false });
+        store.createIndex('capturedAt', 'capturedAt', { unique: false });
+      }
 
-      store.createIndex('submissionId', 'submissionId', { unique: true });
-      store.createIndex('titleSlug', 'titleSlug', { unique: false });
-      store.createIndex('capturedAt', 'capturedAt', { unique: false });
+      if (oldVersion < 2) {
+        // cards store — one card per problem, keyed by titleSlug
+        const cardStore = database.createObjectStore('cards', {
+          keyPath: 'titleSlug'
+        });
+        cardStore.createIndex('due', 'due', { unique: false });
+        cardStore.createIndex('state', 'state', { unique: false });
+
+        // reviewLogs store — full audit trail of every review rating
+        const logStore = database.createObjectStore('reviewLogs', {
+          keyPath: 'id',
+          autoIncrement: true
+        });
+        logStore.createIndex('titleSlug', 'titleSlug', { unique: false });
+        logStore.createIndex('reviewedAt', 'reviewedAt', { unique: false });
+      }
     };
 
-    request.onsuccess = (e) => resolve(e.target.result);
+    request.onsuccess = (e) => {
+      const database = e.target.result;
+      database.onversionchange = () => database.close();
+      resolve(database);
+    };
     request.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Reads a single card from the cards store by titleSlug.
+ * Returns the card object or null if not found.
+ */
+function getCard(database, titleSlug) {
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(['cards'], 'readonly');
+    const store = tx.objectStore('cards');
+    const req = store.get(titleSlug);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Writes (upserts) a card to the cards store.
+ */
+function putCard(database, card) {
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(['cards'], 'readwrite');
+    const store = tx.objectStore('cards');
+    const req = store.put(card);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Writes a review log entry to the reviewLogs store.
+ */
+function addReviewLog(database, logEntry) {
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(['reviewLogs'], 'readwrite');
+    const store = tx.objectStore('reviewLogs');
+    const req = store.add(logEntry);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
   });
 }
 
@@ -51,6 +125,7 @@ function openDatabase() {
  * Transforms the intercepted submission payload into a storage record
  * and writes it to IndexedDB. Silently skips duplicates (ConstraintError).
  * Sends SHOW_TOAST to the source tab on successful save.
+ * On first Accepted submission for a problem, creates an FSRS card.
  */
 async function saveSubmission(data, tabId) {
   if (!data || (!data.id && !data.submissionId && !data.submission_id)) {
@@ -105,9 +180,56 @@ async function saveSubmission(data, tabId) {
   }
 
   const saved = await addRecord(db, record);
-  if (saved && tabId !== null) {
-    await notifyTab(tabId);
+  if (saved !== null) {
+    if (record.statusDisplay === 'Accepted') {
+      maybeCreateCard(db, record.titleSlug).catch(err => {
+        console.warn('[LeetReminder] maybeCreateCard failed', err);
+      });
+    }
+    if (tabId !== null) {
+      await notifyTab(tabId);
+    }
   }
+}
+
+/**
+ * Creates an FSRS card for a problem if one does not already exist.
+ * Called after the first Accepted submission for a titleSlug.
+ * Idempotent — safe to call multiple times for the same titleSlug.
+ */
+async function maybeCreateCard(database, titleSlug) {
+  const existing = await getCard(database, titleSlug);
+  if (existing) return; // already has a card — skip
+
+  const emptyCard = createEmptyCard(new Date());
+  const card = {
+    titleSlug,
+    due: emptyCard.due.toISOString(),
+    stability: emptyCard.stability,
+    difficulty: emptyCard.difficulty,
+    elapsed_days: emptyCard.elapsed_days,
+    scheduled_days: emptyCard.scheduled_days,
+    reps: emptyCard.reps,
+    lapses: emptyCard.lapses,
+    state: emptyCard.state,
+    last_review: null,
+    createdAt: Date.now()
+  };
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(['cards'], 'readwrite');
+    const store = tx.objectStore('cards');
+    const req = store.add(card);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => {
+      if (e.target.error.name === 'ConstraintError') {
+        e.preventDefault();
+        resolve(null); // race condition — another context already created the card
+      } else {
+        reject(e.target.error);
+      }
+    };
+  });
 }
 
 /**
