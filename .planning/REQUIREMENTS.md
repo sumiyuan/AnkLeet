@@ -40,19 +40,19 @@ Requirements for AI feedback feature. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AIFB-01 | — | Pending |
-| AIFB-02 | — | Pending |
-| AIFB-03 | — | Pending |
-| AIFB-04 | — | Pending |
-| API-01 | — | Pending |
-| API-02 | — | Pending |
-| API-03 | — | Pending |
+| AIFB-01 | Phase 5 | Pending |
+| AIFB-02 | Phase 5 | Pending |
+| AIFB-03 | Phase 5 | Pending |
+| AIFB-04 | Phase 5 | Pending |
+| API-01 | Phase 4 | Pending |
+| API-02 | Phase 4 | Pending |
+| API-03 | Phase 4 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 7 total
-- Mapped to phases: 0
-- Unmapped: 7 ⚠️
+- Mapped to phases: 7
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after initial definition*
+*Last updated: 2026-03-13 after roadmap creation*
