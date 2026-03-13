@@ -184,11 +184,191 @@ body {
   font-size: 13px;
 }
 
-/* ── Placeholder Panels ── */
+/* ── Review Tab ── */
 
-.placeholder {
-  padding: 32px 16px;
-  text-align: center;
-  color: #adb5bd;
+.reviews-header {
+  padding: 10px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.reviews-due-label {
   font-size: 13px;
+  font-weight: 600;
+  color: #495057;
+}
+
+.review-list {
+  background: #ffffff;
+}
+
+.review-card {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  position: relative;
+  overflow: hidden;
+  transition: opacity 0.3s ease, max-height 0.3s ease, margin 0.3s ease, padding 0.3s ease;
+  max-height: 200px;
+}
+
+.review-card:last-child {
+  border-bottom: none;
+}
+
+.review-card.removing {
+  opacity: 0;
+  max-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.review-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.review-card a {
+  text-decoration: none;
+  color: #0066cc;
+  font-size: 13px;
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-card a:hover {
+  text-decoration: underline;
+}
+
+.rating-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.rating-btn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.rating-btn:hover {
+  opacity: 0.85;
+}
+
+.rating-btn[data-rating="Again"] {
+  background: #ff375f;
+  color: #ffffff;
+}
+
+.rating-btn[data-rating="Hard"] {
+  background: #ffc01e;
+  color: #5a3e00;
+}
+
+.rating-btn[data-rating="Good"] {
+  background: #1a73e8;
+  color: #ffffff;
+}
+
+.rating-btn[data-rating="Easy"] {
+  background: #00b8a3;
+  color: #ffffff;
+}
+
+/* ── Settings Tab ── */
+
+.settings-panel {
+  padding: 16px 14px;
+  background: #ffffff;
+  min-height: 100%;
+}
+
+.settings-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #212529;
+  margin-bottom: 16px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #495057;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #212529;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.form-input:focus {
+  border-color: #1a73e8;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #212529;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.save-btn {
+  padding: 9px 20px;
+  background: #1a73e8;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.save-btn:hover {
+  background: #1558b0;
+}
+
+.save-status {
+  margin-left: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #198754;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.save-status.visible {
+  opacity: 1;
 }

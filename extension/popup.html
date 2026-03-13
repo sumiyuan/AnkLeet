@@ -35,11 +35,38 @@
   </div>
 
   <div id="tab-reviews" class="tab-panel">
-    <div class="placeholder">Reviews coming soon.</div>
+    <div class="reviews-header">
+      <span id="review-count" class="reviews-due-label">Loading...</span>
+    </div>
+    <div id="review-list" class="review-list"></div>
+    <div id="review-empty" class="empty-state" style="display:none;">All caught up!</div>
   </div>
 
   <div id="tab-settings" class="tab-panel">
-    <div class="placeholder">Settings coming soon.</div>
+    <div class="settings-panel">
+      <div class="settings-title">Settings</div>
+
+      <div class="form-group">
+        <label class="form-label" for="api-key">OpenRouter API Key</label>
+        <input type="password" id="api-key" class="form-input" placeholder="sk-or-...">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Notifications</label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="notif-enabled">
+          Enable review reminders
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="notif-time">Reminder Time</label>
+        <input type="time" id="notif-time" class="form-input" value="09:00">
+      </div>
+
+      <button id="save-settings" class="save-btn">Save Settings</button>
+      <span id="save-status" class="save-status"></span>
+    </div>
   </div>
 
   <script src="popup.js"></script>
