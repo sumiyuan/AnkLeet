@@ -26,8 +26,8 @@ Users never forget a LeetCode problem — every submission is tracked and the FS
 
 ### Active
 
-- [ ] AI feedback on wrong submissions — user chooses hint-only or full explanation
-- [ ] OpenRouter integration for LLM flexibility (user provides their own API key)
+- [ ] AI feedback on wrong submissions — user chooses hint or full solution
+- [ ] Gemini API integration (user provides their own API key)
 
 ### Out of Scope
 
@@ -47,7 +47,7 @@ IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
 
 - **Platform**: Chrome extension (Manifest V3) — must follow Chrome Web Store policies
 - **Storage**: Local-only via Chrome storage / IndexedDB — no external database
-- **AI**: User-provided API key through OpenRouter — no server-side proxy
+- **AI**: User-provided Gemini API key — no server-side proxy
 - **LeetCode integration**: Content script injection — dependent on LeetCode's DOM structure
 
 ## Key Decisions
@@ -55,7 +55,7 @@ IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Local-only storage (chrome.storage.local + IndexedDB) | No backend complexity, privacy-first, zero hosting cost | Good |
-| OpenRouter for AI | Single integration supports multiple LLM providers | Pending (v2) |
+| Gemini for AI feedback | Free tier, simple REST API, no SDK needed in MV3 | Pending (v1.1) |
 | FSRS over SM-2 | More modern algorithm, better retention modeling, open-source | Good |
 | REST intercept over GraphQL | LeetCode uses REST for submissions — confirmed via live traffic | Good |
 | store.add() with ConstraintError for dedup | Simpler than check-then-insert, race-condition safe | Good |
@@ -63,5 +63,14 @@ IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
 | Shadow DOM (closed) for toast/rating UI | Isolates extension UI from LeetCode page styles | Good |
 | Minimum 1-day review interval | FSRS learning steps (minutes) don't suit re-solving LeetCode problems | Good |
 
+## Current Milestone: v1.1 AI Feedback
+
+**Goal:** Give users AI-powered feedback on wrong submissions — hint or full solution via Gemini API.
+
+**Target features:**
+- Wrong submission popup with "Hint" and "Full Solution" buttons
+- Gemini API integration using user-provided API key
+- AI response displayed inline in the popup
+
 ---
-*Last updated: 2026-03-13 after v1.0 milestone*
+*Last updated: 2026-03-13 after v1.1 milestone started*
