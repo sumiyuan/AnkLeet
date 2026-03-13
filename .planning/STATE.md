@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 03-dashboard-reviews-notifications-03-01-PLAN.md
-last_updated: "2026-03-13T09:50:56.209Z"
+stopped_at: Completed 03-dashboard-reviews-notifications-03-03-PLAN.md
+last_updated: "2026-03-13T09:54:02.707Z"
 last_activity: 2026-03-13 — Roadmap created
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-fsrs-scheduling-engine P01 | 2 | 2 tasks | 2 files |
 | Phase 02-fsrs-scheduling-engine P02 | 2 | 2 tasks | 1 files |
 | Phase 03-dashboard-reviews-notifications P01 | 2 | 1 tasks | 5 files |
+| Phase 03-dashboard-reviews-notifications P03 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Recent decisions affecting current work:
 - [Phase 02-fsrs-scheduling-engine]: Naive streak (consecutive calendar days) used; fair streak deferred to Phase 3
 - [Phase 03-dashboard-reviews-notifications]: capturedAt stored as Date.now() integer ms — IDBKeyRange.bound uses numeric timestamps for GET_TODAY_SUBMISSIONS
 - [Phase 03-dashboard-reviews-notifications]: alarms and notifications permissions added in plan 01 alongside popup wiring to avoid a second manifest edit in plan 03
+- [Phase 03-dashboard-reviews-notifications]: enrichCardsWithSubmissionData picks most recent submission by capturedAt for title/difficulty
+- [Phase 03-dashboard-reviews-notifications]: lastNotifiedDate stored as separate key to avoid overwriting settings object
+- [Phase 03-dashboard-reviews-notifications]: Fixed notification ID dueReviews prevents notification stacking on repeat alarms
 
 ### Pending Todos
 
@@ -93,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-13T09:50:56.205Z
-Stopped at: Completed 03-dashboard-reviews-notifications-03-01-PLAN.md
+Last session: 2026-03-13T09:54:02.704Z
+Stopped at: Completed 03-dashboard-reviews-notifications-03-03-PLAN.md
 Resume file: None

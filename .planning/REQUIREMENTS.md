@@ -27,8 +27,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Notifications
 
-- [ ] **NOTF-01**: Browser notification when reviews are due
-- [ ] **NOTF-02**: Extension icon badge shows count of due reviews
+- [x] **NOTF-01**: Browser notification when reviews are due
+- [x] **NOTF-02**: Extension icon badge shows count of due reviews
 
 ### Storage
 
@@ -78,8 +78,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DASH-01 | Phase 3 | Complete |
 | DASH-02 | Phase 3 | Pending |
 | DASH-03 | Phase 3 | Pending |
-| NOTF-01 | Phase 3 | Pending |
-| NOTF-02 | Phase 3 | Pending |
+| NOTF-01 | Phase 3 | Complete |
+| NOTF-02 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 12 total
