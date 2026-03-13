@@ -11,7 +11,15 @@ let db = null;
 openDatabase().then(database => {
   db = database;
   db.onversionchange = () => db.close();
+  // Update badge immediately on worker startup — no gap until first alarm tick
+  getDueToday(db).then(cards => updateBadge(cards.length)).catch(() => {});
 }).catch(() => {});
+
+// Create checkDueReviews alarm on every worker startup (idempotent).
+// Must be at module scope — not inside a callback.
+chrome.alarms.get('checkDueReviews', (alarm) => {
+  if (!alarm) chrome.alarms.create('checkDueReviews', { periodInMinutes: 1 });
+});
 
 // --- Top-level event listeners ---
 
@@ -32,6 +40,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       try {
         await rateReview(db, message.payload.titleSlug, message.payload.rating);
+        // Update badge immediately after rating so count reflects the new state
+        getDueToday(db).then(cards => updateBadge(cards.length)).catch(() => {});
         sendResponse({ ok: true });
       } catch (err) {
         sendResponse({ error: err.message });
@@ -50,7 +60,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       try {
         const cards = await getDueToday(db);
-        sendResponse({ cards });
+        const enriched = await enrichCardsWithSubmissionData(db, cards);
+        sendResponse({ cards: enriched });
       } catch (err) {
         sendResponse({ error: err.message });
       }
@@ -101,7 +112,112 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({ settings: { captureEnabled: true } });
 });
 
+// Alarm listener — MUST be registered at top level (module scope).
+// Fires every minute for the 'checkDueReviews' alarm.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== 'checkDueReviews') return;
+
+  (async () => {
+    if (!db) {
+      try { db = await openDatabase(); } catch { return; }
+    }
+
+    const cards = await getDueToday(db);
+    updateBadge(cards.length);
+
+    // Check notification conditions
+    const { settings, lastNotifiedDate } = await chrome.storage.local.get(['settings', 'lastNotifiedDate']);
+
+    if (settings?.notificationsEnabled !== true) return;
+    if (cards.length === 0) return;
+
+    // Parse notificationTime (default '09:00') and compare with current time
+    const timeStr = settings.notificationTime || '09:00';
+    const [notifHour, notifMin] = timeStr.split(':').map(Number);
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const notifMinutes = notifHour * 60 + notifMin;
+    if (nowMinutes < notifMinutes) return;
+
+    // Dedup: only fire once per calendar day
+    const todayStr = now.toISOString().slice(0, 10);
+    if (lastNotifiedDate === todayStr) return;
+
+    // All conditions met — fire notification
+    const count = cards.length;
+    chrome.notifications.create('dueReviews', {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'LeetReminder',
+      message: `You have ${count} review${count === 1 ? '' : 's'} due today.`
+    });
+    await chrome.storage.local.set({ lastNotifiedDate: todayStr });
+  })();
+});
+
 // --- Functions ---
+
+/**
+ * Updates the extension icon badge with the number of due reviews.
+ * Clears the badge when count is 0.
+ */
+function updateBadge(count) {
+  if (count > 0) {
+    chrome.action.setBadgeText({ text: String(count) });
+    chrome.action.setBadgeBackgroundColor({ color: '#E05C5C' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
+  }
+}
+
+/**
+ * Enriches a list of due cards with title and difficulty from the submissions store.
+ * Looks up the most recent submission for each card's titleSlug.
+ * Falls back to titleSlug as title and null as difficulty if no submission found.
+ */
+function enrichCardsWithSubmissionData(database, cards) {
+  return new Promise((resolve, reject) => {
+    if (cards.length === 0) {
+      resolve([]);
+      return;
+    }
+
+    const tx = database.transaction(['submissions'], 'readonly');
+    const store = tx.objectStore('submissions');
+    const index = store.index('titleSlug');
+
+    const enriched = [];
+    let pending = cards.length;
+
+    cards.forEach(card => {
+      // Get all submissions for this titleSlug, then pick the most recent
+      const req = index.getAll(IDBKeyRange.only(card.titleSlug));
+      req.onsuccess = () => {
+        const submissions = req.result;
+        let title = card.titleSlug;
+        let difficulty = null;
+
+        if (submissions && submissions.length > 0) {
+          // Pick the most recently captured submission
+          const latest = submissions.reduce((best, s) =>
+            s.capturedAt > best.capturedAt ? s : best, submissions[0]);
+          if (latest.title) title = latest.title;
+          if (latest.difficulty) difficulty = latest.difficulty;
+        }
+
+        enriched.push({ ...card, title, difficulty });
+        pending--;
+        if (pending === 0) resolve(enriched);
+      };
+      req.onerror = () => {
+        // On error, fall back gracefully
+        enriched.push({ ...card, title: card.titleSlug, difficulty: null });
+        pending--;
+        if (pending === 0) resolve(enriched);
+      };
+    });
+  });
+}
 
 /**
  * Opens (or creates) the 'leetreminder' IndexedDB at version 2.
