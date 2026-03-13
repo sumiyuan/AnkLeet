@@ -13,7 +13,7 @@ LeetReminder is built in three sequential phases that follow the data dependency
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation and Capture** - Working extension that captures LeetCode submissions and stores them locally (completed 2026-03-13)
-- [ ] **Phase 2: FSRS Scheduling Engine** - Scheduling engine that calculates review intervals and maintains card state
+- [x] **Phase 2: FSRS Scheduling Engine** - Scheduling engine that calculates review intervals and maintains card state (completed 2026-03-13)
 - [ ] **Phase 3: Dashboard, Reviews, and Notifications** - Full popup UI with daily review queue, self-assessment rating, and browser notifications
 
 ## Phase Details
@@ -41,7 +41,7 @@ Plans:
   2. After a user rates a review (Again / Hard / Good / Easy), the card's next due date updates to a new calculated interval and the old card state is not mutated in place
   3. The due-today queue returns only problems whose FSRS due date is today or earlier (no problems due in the future, no problems that have never been captured)
   4. Review statistics (retention rate, review count, streak) are queryable and reflect the current card states accurately
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 02-01-PLAN.md — Vendor ts-fsrs, IndexedDB v2 migration, FSRS card creation on first Accepted submission
 - [ ] 02-02-PLAN.md — RATE_REVIEW, GET_DUE_TODAY, and GET_STATS message handlers
@@ -66,5 +66,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation and Capture | 2/2 | Complete   | 2026-03-13 |
-| 2. FSRS Scheduling Engine | 0/2 | Not started | - |
+| 2. FSRS Scheduling Engine | 2/2 | Complete   | 2026-03-13 |
 | 3. Dashboard, Reviews, and Notifications | 0/? | Not started | - |

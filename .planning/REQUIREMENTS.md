@@ -15,9 +15,9 @@ Requirements for initial release. Each maps to roadmap phases.
 ### FSRS Scheduling
 
 - [x] **FSRS-01**: FSRS algorithm calculates optimal review intervals for each problem
-- [ ] **FSRS-02**: User rates review difficulty (Again/Hard/Good/Easy) after completing a review
-- [ ] **FSRS-03**: Due-today queue shows problems scheduled for review
-- [ ] **FSRS-04**: Review statistics displayed (retention rate, review count, streak)
+- [x] **FSRS-02**: User rates review difficulty (Again/Hard/Good/Easy) after completing a review
+- [x] **FSRS-03**: Due-today queue shows problems scheduled for review
+- [x] **FSRS-04**: Review statistics displayed (retention rate, review count, streak)
 
 ### Dashboard
 
@@ -72,9 +72,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CAPT-02 | Phase 1 | Complete |
 | STOR-01 | Phase 1 | Complete |
 | FSRS-01 | Phase 2 | Complete |
-| FSRS-02 | Phase 2 | Pending |
-| FSRS-03 | Phase 2 | Pending |
-| FSRS-04 | Phase 2 | Pending |
+| FSRS-02 | Phase 2 | Complete |
+| FSRS-03 | Phase 2 | Complete |
+| FSRS-04 | Phase 2 | Complete |
 | DASH-01 | Phase 3 | Pending |
 | DASH-02 | Phase 3 | Pending |
 | DASH-03 | Phase 3 | Pending |

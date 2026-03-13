@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-13T06:09:33.149Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-13T06:13:33.096Z"
 last_activity: 2026-03-13 — Roadmap created
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-foundation-and-capture P02 | 1 | 2 tasks | 3 files |
 | Phase 01-foundation-and-capture P02 | 30 | 3 tasks | 4 files |
 | Phase 02-fsrs-scheduling-engine P01 | 2 | 2 tasks | 2 files |
+| Phase 02-fsrs-scheduling-engine P02 | 2 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Recent decisions affecting current work:
 - [Phase 01-foundation-and-capture]: background.js saveSubmission detects format by presence of data.question to distinguish GraphQL vs REST /check/ shape
 - [Phase 02-fsrs-scheduling-engine]: UMD global for ts-fsrs is FSRS (not tsfsrs) — confirmed from bundle header inspection
 - [Phase 02-fsrs-scheduling-engine]: maybeCreateCard is fire-and-forget from saveSubmission using .catch() — card failure must not block submission capture
+- [Phase 02-fsrs-scheduling-engine]: Both tasks implemented in single file write; committed as 646ae62 (same approach as Plan 01)
+- [Phase 02-fsrs-scheduling-engine]: Naive streak (consecutive calendar days) used; fair streak deferred to Phase 3
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-13T06:09:33.146Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-13T06:13:33.093Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
