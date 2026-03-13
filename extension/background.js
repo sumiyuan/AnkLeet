@@ -19,8 +19,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SUBMISSION_CAPTURED') {
     const tabId = sender.tab ? sender.tab.id : null;
     saveSubmission(message.payload, tabId);
+    return false; // no async response needed
   }
-  return false; // no async response needed
+
+  if (message.type === 'RATE_REVIEW') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' });
+          return;
+        }
+      }
+      try {
+        await rateReview(db, message.payload.titleSlug, message.payload.rating);
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true; // async response
+  }
+
+  if (message.type === 'GET_DUE_TODAY') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' });
+          return;
+        }
+      }
+      try {
+        const cards = await getDueToday(db);
+        sendResponse({ cards });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true; // async response
+  }
+
+  if (message.type === 'GET_STATS') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' });
+          return;
+        }
+      }
+      try {
+        const stats = await getStats(db);
+        sendResponse(stats);
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true; // async response
+  }
+
+  return false;
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -263,4 +319,135 @@ async function notifyTab(tabId) {
   } catch {
     // Tab navigated away or was closed — ignore
   }
+}
+
+/**
+ * Rates a review for a card identified by titleSlug.
+ * Reconstructs Date fields before passing to the FSRS scheduler,
+ * updates the card in IndexedDB, and adds a review log entry.
+ * ratingName must be one of: 'Again', 'Hard', 'Good', 'Easy'.
+ */
+async function rateReview(database, titleSlug, ratingName) {
+  const validRatings = ['Again', 'Hard', 'Good', 'Easy'];
+  if (!validRatings.includes(ratingName)) {
+    throw new Error(`Invalid rating: ${ratingName}. Must be one of ${validRatings.join(', ')}`);
+  }
+
+  const stored = await getCard(database, titleSlug);
+  if (!stored) {
+    throw new Error(`Card not found for titleSlug: ${titleSlug}`);
+  }
+
+  // Reconstruct Date fields — FSRS scheduler requires real Date objects
+  const card = {
+    ...stored,
+    due: new Date(stored.due),
+    last_review: stored.last_review ? new Date(stored.last_review) : null
+  };
+
+  const scheduler = fsrs();
+  const now = new Date();
+  const recordLog = scheduler.repeat(card, now);
+
+  const rating = Rating[ratingName];
+  const { card: newCard, log } = recordLog[rating];
+
+  const reviewLogEntry = {
+    titleSlug,
+    rating: log.rating,
+    oldState: stored.state,
+    newState: newCard.state,
+    scheduledDays: log.scheduled_days,
+    elapsedDays: log.elapsed_days,
+    reviewedAt: now.toISOString()
+  };
+
+  const updatedCard = {
+    titleSlug,
+    due: newCard.due.toISOString(),
+    stability: newCard.stability,
+    difficulty: newCard.difficulty,
+    elapsed_days: newCard.elapsed_days,
+    scheduled_days: newCard.scheduled_days,
+    reps: newCard.reps,
+    lapses: newCard.lapses,
+    state: newCard.state,
+    last_review: newCard.last_review ? newCard.last_review.toISOString() : null,
+    createdAt: stored.createdAt
+  };
+
+  await putCard(database, updatedCard);
+  await addReviewLog(database, reviewLogEntry);
+}
+
+/**
+ * Returns all cards whose due date is today or earlier.
+ * Uses IDBKeyRange.upperBound on the due index (ISO string comparison).
+ */
+function getDueToday(database) {
+  return new Promise((resolve, reject) => {
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    const range = IDBKeyRange.upperBound(end.toISOString(), false);
+    const tx = database.transaction(['cards'], 'readonly');
+    const store = tx.objectStore('cards');
+    const index = store.index('due');
+    const req = index.getAll(range);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Reads all entries from the reviewLogs store.
+ */
+function getAllReviewLogs(database) {
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(['reviewLogs'], 'readonly');
+    const store = tx.objectStore('reviewLogs');
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Computes the consecutive calendar-day streak counting backward from today.
+ * reviewDays: Set of 'YYYY-MM-DD' date strings representing days with at least one review.
+ */
+function computeStreak(reviewDays) {
+  let streak = 0;
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+
+  while (true) {
+    const dayStr = cursor.toISOString().slice(0, 10);
+    if (!reviewDays.has(dayStr)) break;
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return streak;
+}
+
+/**
+ * Returns aggregate statistics computed from all review log entries.
+ * { totalReviews, retentionRate, streak }
+ * retentionRate: percentage of Good (3) or Easy (4) ratings, rounded to integer.
+ * streak: consecutive calendar days with at least one review, counting backward from today.
+ */
+async function getStats(database) {
+  const logs = await getAllReviewLogs(database);
+  const totalReviews = logs.length;
+
+  let retentionRate = 0;
+  if (totalReviews > 0) {
+    const retained = logs.filter(log => log.rating >= 3).length;
+    retentionRate = Math.round((retained / totalReviews) * 100);
+  }
+
+  const reviewDays = new Set(logs.map(log => log.reviewedAt.slice(0, 10)));
+  const streak = computeStreak(reviewDays);
+
+  return { totalReviews, retentionRate, streak };
 }
