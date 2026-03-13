@@ -32,7 +32,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Storage
 
-- [ ] **STOR-01**: All data stored locally via Chrome storage / IndexedDB (no account needed)
+- [x] **STOR-01**: All data stored locally via Chrome storage / IndexedDB (no account needed)
 
 ## v2 Requirements
 
@@ -70,7 +70,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | CAPT-01 | Phase 1 | Pending |
 | CAPT-02 | Phase 1 | Pending |
-| STOR-01 | Phase 1 | Pending |
+| STOR-01 | Phase 1 | Complete |
 | FSRS-01 | Phase 2 | Pending |
 | FSRS-02 | Phase 2 | Pending |
 | FSRS-03 | Phase 2 | Pending |
