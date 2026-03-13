@@ -4,7 +4,7 @@
 
 // Module-scope DB reference — persists for the lifetime of this worker instance.
 let db = null;
-openDatabase().then(database => { db = database; });
+openDatabase().then(database => { db = database; }).catch(() => {});
 
 // --- Top-level event listeners ---
 
@@ -24,7 +24,6 @@ chrome.runtime.onInstalled.addListener(() => {
 
 /**
  * Opens (or creates) the 'leetreminder' IndexedDB at version 1.
- * Schema is locked at v1 for Phase 1 — increment version for any structural change.
  */
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -33,15 +32,12 @@ function openDatabase() {
     request.onupgradeneeded = (event) => {
       const database = event.target.result;
 
-      // submissions object store — autoIncrement primary key 'id'
       const store = database.createObjectStore('submissions', {
         keyPath: 'id',
         autoIncrement: true
       });
 
-      // Unique index on LeetCode's submission ID — prevents duplicate captures
       store.createIndex('submissionId', 'submissionId', { unique: true });
-      // Non-unique indexes for Phase 3 queries
       store.createIndex('titleSlug', 'titleSlug', { unique: false });
       store.createIndex('capturedAt', 'capturedAt', { unique: false });
     };
@@ -52,36 +48,53 @@ function openDatabase() {
 }
 
 /**
- * Transforms the raw submissionDetails GraphQL payload into the storage record
- * shape and writes it to IndexedDB. Silently skips duplicates (ConstraintError).
+ * Transforms the intercepted submission payload into a storage record
+ * and writes it to IndexedDB. Silently skips duplicates (ConstraintError).
  * Sends SHOW_TOAST to the source tab on successful save.
- *
- * @param {object} data - submissionDetails payload from LeetCode GraphQL
- * @param {number|null} tabId - ID of the tab that sent the message
  */
 async function saveSubmission(data, tabId) {
-  // Validate required fields before writing — LeetCode's schema is undocumented
-  // and may change. Log a warning and bail if critical fields are absent.
-  if (!data || (!data.id && !data.submissionId) || !data.question) {
-    console.warn('[LeetReminder] Unexpected submissionDetails shape', data);
+  if (!data || (!data.id && !data.submissionId && !data.submission_id)) {
+    console.warn('[LeetReminder] Unexpected submission shape', data);
     return;
   }
 
-  const record = {
-    submissionId: String(data.id || data.submissionId),
-    titleSlug: data.question?.titleSlug,
-    title: data.question?.title,
-    difficulty: data.question?.difficulty,
-    topicTags: (data.question?.topicTags || []).map(t => t.name),
-    url: `https://leetcode.com/problems/${data.question?.titleSlug}/`,
-    code: data.code,
-    lang: data.lang?.name,
-    langDisplay: data.lang?.verboseName,
-    statusDisplay: data.statusDisplay,
-    capturedAt: Date.now()
-  };
+  let record;
 
-  // If the DB connection was lost (worker restart), re-open before proceeding.
+  if (data.question) {
+    // GraphQL submissionDetails format
+    record = {
+      submissionId: String(data.id || data.submissionId),
+      titleSlug: data.question.titleSlug,
+      title: data.question.title,
+      difficulty: data.question.difficulty,
+      topicTags: (data.question.topicTags || []).map(t => t.name),
+      url: `https://leetcode.com/problems/${data.question.titleSlug}/`,
+      code: data.code,
+      lang: data.lang?.name,
+      langDisplay: data.lang?.verboseName,
+      statusDisplay: data.statusDisplay,
+      capturedAt: Date.now()
+    };
+  } else {
+    // REST /check/ endpoint format
+    const titleSlug = data._titleSlug || '';
+    record = {
+      submissionId: String(data.submission_id),
+      titleSlug: titleSlug,
+      title: titleSlug.replace(/-/g, ' '),
+      difficulty: null,
+      topicTags: [],
+      url: `https://leetcode.com/problems/${titleSlug}/`,
+      code: data.code_output || data.code || '',
+      lang: data.lang,
+      langDisplay: data.pretty_lang || data.lang,
+      statusDisplay: data.status_msg || (data.run_success ? 'Accepted' : 'Wrong Answer'),
+      runtime: data.status_runtime,
+      memory: data.status_memory,
+      capturedAt: Date.now()
+    };
+  }
+
   if (!db) {
     try {
       db = await openDatabase();
@@ -100,10 +113,6 @@ async function saveSubmission(data, tabId) {
 /**
  * Writes a record to the submissions store using add() (not put()).
  * Returns the new record key on success, null on duplicate (ConstraintError).
- *
- * @param {IDBDatabase} database
- * @param {object} record
- * @returns {Promise<number|null>}
  */
 function addRecord(database, record) {
   return new Promise((resolve, reject) => {
@@ -114,7 +123,8 @@ function addRecord(database, record) {
     req.onsuccess = () => resolve(req.result);
     req.onerror = (e) => {
       if (e.target.error.name === 'ConstraintError') {
-        resolve(null); // duplicate submission — silently skip
+        e.preventDefault();
+        resolve(null);
       } else {
         reject(e.target.error);
       }
@@ -124,9 +134,6 @@ function addRecord(database, record) {
 
 /**
  * Sends a SHOW_TOAST message to the specified tab.
- * Wrapped in try/catch — tab may have navigated away.
- *
- * @param {number} tabId
  */
 async function notifyTab(tabId) {
   try {
