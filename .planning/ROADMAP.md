@@ -27,7 +27,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Both accepted and wrong submissions are captured, not just accepted ones
   3. The extension stays functional across browser restarts and service worker idle cycles (no state loss)
   4. Storage uses IndexedDB for submission history and chrome.storage.local for settings, keeping each within quota limits
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 01-01-PLAN.md — Extension scaffold with MV3 manifest, service worker, and IndexedDB storage layer
+- [ ] 01-02-PLAN.md — Submission interception pipeline (fetch override, message relay, toast notification)
 
 ### Phase 2: FSRS Scheduling Engine
 **Goal**: Every captured submission has an FSRS card that calculates the optimal next review date, persists correctly across sessions, and surfaces a queryable due-today list.
@@ -59,6 +62,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation and Capture | 0/? | Not started | - |
+| 1. Foundation and Capture | 0/2 | Planning complete | - |
 | 2. FSRS Scheduling Engine | 0/? | Not started | - |
 | 3. Dashboard, Reviews, and Notifications | 0/? | Not started | - |
