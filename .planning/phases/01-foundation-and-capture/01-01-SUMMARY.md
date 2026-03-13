@@ -112,6 +112,17 @@ None - no external service configuration required.
 - IndexedDB storage contract established — content scripts can start sending data
 - Toast notification infrastructure (SHOW_TOAST) ready to be received by content-toast.js (Plan 03)
 
+## Self-Check: PASSED
+
+- extension/manifest.json: FOUND
+- extension/background.js: FOUND
+- extension/icons/icon16.png: FOUND
+- extension/icons/icon48.png: FOUND
+- extension/icons/icon128.png: FOUND
+- 01-01-SUMMARY.md: FOUND
+- Commit 86eb0bc: FOUND (feat: manifest and icons)
+- Commit bfcca3b: FOUND (feat: service worker and IndexedDB)
+
 ---
 *Phase: 01-foundation-and-capture*
 *Completed: 2026-03-13*

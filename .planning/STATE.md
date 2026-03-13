@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: "Checkpoint: Task 3 human-verify in 01-foundation-and-capture-02-PLAN.md"
-last_updated: "2026-03-13T04:40:02.127Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-03-13T05:31:52.008Z"
 last_activity: 2026-03-13 — Roadmap created
 progress:
   total_phases: 3
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01-foundation-and-capture P01 | 1 | 2 tasks | 5 files |
 | Phase 01-foundation-and-capture P02 | 1 | 2 tasks | 3 files |
+| Phase 01-foundation-and-capture P02 | 30 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,8 @@ Recent decisions affecting current work:
 - [Phase 01-foundation-and-capture]: Open IndexedDB eagerly at worker startup; re-open if null at saveSubmission call time (worker restart guard)
 - [Phase 01-foundation-and-capture]: Filter GraphQL intercepts by operationName='submissionDetails' to avoid performance impact from intercepting all LeetCode GraphQL calls
 - [Phase 01-foundation-and-capture]: Closed Shadow DOM mode for toast — extension internals inaccessible to LeetCode page scripts
+- [Phase 01-foundation-and-capture]: LeetCode uses REST endpoints (POST /submit/ + GET /check/) not GraphQL for submissions — interceptor rewritten after live traffic verification
+- [Phase 01-foundation-and-capture]: background.js saveSubmission detects format by presence of data.question to distinguish GraphQL vs REST /check/ shape
 
 ### Pending Todos
 
@@ -81,6 +84,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-13T04:40:02.124Z
-Stopped at: Checkpoint: Task 3 human-verify in 01-foundation-and-capture-02-PLAN.md
+Last session: 2026-03-13T05:31:32.874Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
