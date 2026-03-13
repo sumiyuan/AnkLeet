@@ -41,7 +41,10 @@ Plans:
   2. After a user rates a review (Again / Hard / Good / Easy), the card's next due date updates to a new calculated interval and the old card state is not mutated in place
   3. The due-today queue returns only problems whose FSRS due date is today or earlier (no problems due in the future, no problems that have never been captured)
   4. Review statistics (retention rate, review count, streak) are queryable and reflect the current card states accurately
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 02-01-PLAN.md — Vendor ts-fsrs, IndexedDB v2 migration, FSRS card creation on first Accepted submission
+- [ ] 02-02-PLAN.md — RATE_REVIEW, GET_DUE_TODAY, and GET_STATS message handlers
 
 ### Phase 3: Dashboard, Reviews, and Notifications
 **Goal**: Users can open the extension popup to see their daily activity and due reviews, rate completed reviews to update scheduling, and receive browser notifications when reviews are due — even on days they don't open LeetCode.
@@ -63,5 +66,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation and Capture | 2/2 | Complete   | 2026-03-13 |
-| 2. FSRS Scheduling Engine | 0/? | Not started | - |
+| 2. FSRS Scheduling Engine | 0/2 | Not started | - |
 | 3. Dashboard, Reviews, and Notifications | 0/? | Not started | - |
