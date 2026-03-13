@@ -27,7 +27,7 @@ Users never forget a LeetCode problem — every submission is tracked and the FS
 ### Active
 
 - [ ] AI feedback on wrong submissions — user chooses hint or full solution
-- [ ] Gemini API integration (user provides their own API key)
+- [ ] OpenRouter API integration (user provides their own API key)
 
 ### Out of Scope
 
@@ -47,7 +47,7 @@ IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
 
 - **Platform**: Chrome extension (Manifest V3) — must follow Chrome Web Store policies
 - **Storage**: Local-only via Chrome storage / IndexedDB — no external database
-- **AI**: User-provided Gemini API key — no server-side proxy
+- **AI**: User-provided OpenRouter API key — no server-side proxy
 - **LeetCode integration**: Content script injection — dependent on LeetCode's DOM structure
 
 ## Key Decisions
@@ -55,7 +55,7 @@ IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Local-only storage (chrome.storage.local + IndexedDB) | No backend complexity, privacy-first, zero hosting cost | Good |
-| Gemini for AI feedback | Free tier, simple REST API, no SDK needed in MV3 | Pending (v1.1) |
+| OpenRouter for AI feedback | Multi-provider flexibility, user brings own key, simple REST API | Pending (v1.1) |
 | FSRS over SM-2 | More modern algorithm, better retention modeling, open-source | Good |
 | REST intercept over GraphQL | LeetCode uses REST for submissions — confirmed via live traffic | Good |
 | store.add() with ConstraintError for dedup | Simpler than check-then-insert, race-condition safe | Good |
@@ -69,7 +69,7 @@ IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
 
 **Target features:**
 - Wrong submission popup with "Hint" and "Full Solution" buttons
-- Gemini API integration using user-provided API key
+- OpenRouter API integration using existing API key setting
 - AI response displayed inline in the popup
 
 ---
