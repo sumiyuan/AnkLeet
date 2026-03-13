@@ -1,0 +1,194 @@
+/* LeetReminder Popup Styles */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 380px;
+  min-height: 500px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  background: #f8f9fa;
+  color: #212529;
+}
+
+/* ── Tab Bar ── */
+
+.tab-bar {
+  display: flex;
+  flex-direction: row;
+  border-bottom: 2px solid #dee2e6;
+  background: #ffffff;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 12px 8px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6c757d;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: #495057;
+  background: #f8f9fa;
+}
+
+.tab-btn.active {
+  color: #1a73e8;
+  border-bottom-color: #1a73e8;
+  background: #ffffff;
+}
+
+/* ── Tab Panels ── */
+
+.tab-panel {
+  display: none;
+  overflow-y: auto;
+  max-height: 452px; /* 500px min-height - 48px tab bar */
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+/* ── Stats Bar ── */
+
+.stats-bar {
+  display: flex;
+  flex-direction: row;
+  background: #ffffff;
+  border-bottom: 1px solid #dee2e6;
+  padding: 16px 8px;
+  gap: 8px;
+}
+
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a73e8;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+/* ── Section Header ── */
+
+.section-header {
+  padding: 10px 14px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #f0f0f0;
+  background: #f8f9fa;
+}
+
+/* ── Activity List ── */
+
+.activity-list {
+  background: #ffffff;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.activity-item:last-child {
+  border-bottom: none;
+}
+
+.activity-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #212529;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.difficulty-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.difficulty-badge.easy {
+  background: #d4edda;
+  color: #155724;
+}
+
+.difficulty-badge.medium {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.difficulty-badge.hard {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.difficulty-badge.unknown {
+  background: #e2e3e5;
+  color: #495057;
+}
+
+.attempt-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #6c757d;
+  white-space: nowrap;
+}
+
+/* ── Empty State ── */
+
+.empty-state {
+  padding: 32px 16px;
+  text-align: center;
+  color: #adb5bd;
+  font-size: 13px;
+}
+
+/* ── Placeholder Panels ── */
+
+.placeholder {
+  padding: 32px 16px;
+  text-align: center;
+  color: #adb5bd;
+  font-size: 13px;
+}

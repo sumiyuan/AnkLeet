@@ -76,6 +76,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // async response
   }
 
+  if (message.type === 'GET_TODAY_SUBMISSIONS') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' });
+          return;
+        }
+      }
+      try {
+        const submissions = await getTodaySubmissions(db);
+        sendResponse({ submissions });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true; // async response
+  }
+
   return false;
 });
 
@@ -428,6 +446,26 @@ function computeStreak(reviewDays) {
   }
 
   return streak;
+}
+
+/**
+ * Returns all submissions captured today (local calendar day).
+ * capturedAt is stored as Date.now() (integer ms) — use numeric IDBKeyRange.
+ */
+function getTodaySubmissions(database) {
+  return new Promise((resolve, reject) => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    const range = IDBKeyRange.bound(start.getTime(), end.getTime());
+    const tx = database.transaction(['submissions'], 'readonly');
+    const store = tx.objectStore('submissions');
+    const index = store.index('capturedAt');
+    const req = index.getAll(range);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
 }
 
 /**
