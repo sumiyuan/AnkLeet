@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "LeetReminder",
+  "version": "1.0.0",
+  "description": "Automatically track every LeetCode submission",
+  "permissions": ["storage"],
+  "host_permissions": ["https://leetcode.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content-isolated.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content-toast.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
