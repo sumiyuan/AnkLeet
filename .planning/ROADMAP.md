@@ -12,7 +12,7 @@ LeetReminder is built in three sequential phases that follow the data dependency
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation and Capture** - Working extension that captures LeetCode submissions and stores them locally
+- [x] **Phase 1: Foundation and Capture** - Working extension that captures LeetCode submissions and stores them locally (completed 2026-03-13)
 - [ ] **Phase 2: FSRS Scheduling Engine** - Scheduling engine that calculates review intervals and maintains card state
 - [ ] **Phase 3: Dashboard, Reviews, and Notifications** - Full popup UI with daily review queue, self-assessment rating, and browser notifications
 
@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Both accepted and wrong submissions are captured, not just accepted ones
   3. The extension stays functional across browser restarts and service worker idle cycles (no state loss)
   4. Storage uses IndexedDB for submission history and chrome.storage.local for settings, keeping each within quota limits
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 01-01-PLAN.md — Extension scaffold with MV3 manifest, service worker, and IndexedDB storage layer
 - [ ] 01-02-PLAN.md — Submission interception pipeline (fetch override, message relay, toast notification)
@@ -62,6 +62,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation and Capture | 1/2 | In Progress|  |
+| 1. Foundation and Capture | 2/2 | Complete   | 2026-03-13 |
 | 2. FSRS Scheduling Engine | 0/? | Not started | - |
 | 3. Dashboard, Reviews, and Notifications | 0/? | Not started | - |

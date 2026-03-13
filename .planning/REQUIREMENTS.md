@@ -9,8 +9,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Submission Capture
 
-- [ ] **CAPT-01**: Extension auto-captures accepted and wrong submissions on LeetCode
-- [ ] **CAPT-02**: Each submission stores code, result, timestamp, and problem metadata (title, difficulty, tags, URL)
+- [x] **CAPT-01**: Extension auto-captures accepted and wrong submissions on LeetCode
+- [x] **CAPT-02**: Each submission stores code, result, timestamp, and problem metadata (title, difficulty, tags, URL)
 
 ### FSRS Scheduling
 
@@ -68,8 +68,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CAPT-01 | Phase 1 | Pending |
-| CAPT-02 | Phase 1 | Pending |
+| CAPT-01 | Phase 1 | Complete |
+| CAPT-02 | Phase 1 | Complete |
 | STOR-01 | Phase 1 | Complete |
 | FSRS-01 | Phase 2 | Pending |
 | FSRS-02 | Phase 2 | Pending |
