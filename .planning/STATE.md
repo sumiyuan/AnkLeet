@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 03-dashboard-reviews-notifications-03-03-PLAN.md
-last_updated: "2026-03-13T09:54:02.707Z"
+stopped_at: Completed 03-dashboard-reviews-notifications-03-02-PLAN.md
+last_updated: "2026-03-13T09:57:07.644Z"
 last_activity: 2026-03-13 — Roadmap created
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-fsrs-scheduling-engine P02 | 2 | 2 tasks | 1 files |
 | Phase 03-dashboard-reviews-notifications P01 | 2 | 1 tasks | 5 files |
 | Phase 03-dashboard-reviews-notifications P03 | 2 | 1 tasks | 1 files |
+| Phase 03-dashboard-reviews-notifications P02 | 83 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase 03-dashboard-reviews-notifications]: enrichCardsWithSubmissionData picks most recent submission by capturedAt for title/difficulty
 - [Phase 03-dashboard-reviews-notifications]: lastNotifiedDate stored as separate key to avoid overwriting settings object
 - [Phase 03-dashboard-reviews-notifications]: Fixed notification ID dueReviews prevents notification stacking on repeat alarms
+- [Phase 03-dashboard-reviews-notifications]: Tab-lazy loading: each tab's data function called on tab activation, not on popup open
+- [Phase 03-dashboard-reviews-notifications]: Settings merge: always read existing settings before writing to preserve captureEnabled and all other keys
 
 ### Pending Todos
 
@@ -97,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-13T09:54:02.704Z
-Stopped at: Completed 03-dashboard-reviews-notifications-03-03-PLAN.md
+Last session: 2026-03-13T09:57:07.641Z
+Stopped at: Completed 03-dashboard-reviews-notifications-03-02-PLAN.md
 Resume file: None

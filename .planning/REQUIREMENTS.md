@@ -22,8 +22,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Dashboard
 
 - [x] **DASH-01**: Daily activity view showing problems attempted today with attempt counts
-- [ ] **DASH-02**: Review queue with links to re-solve problems on LeetCode
-- [ ] **DASH-03**: Settings page for OpenRouter API key and notification preferences
+- [x] **DASH-02**: Review queue with links to re-solve problems on LeetCode
+- [x] **DASH-03**: Settings page for OpenRouter API key and notification preferences
 
 ### Notifications
 
@@ -76,8 +76,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FSRS-03 | Phase 2 | Complete |
 | FSRS-04 | Phase 2 | Complete |
 | DASH-01 | Phase 3 | Complete |
-| DASH-02 | Phase 3 | Pending |
-| DASH-03 | Phase 3 | Pending |
+| DASH-02 | Phase 3 | Complete |
+| DASH-03 | Phase 3 | Complete |
 | NOTF-01 | Phase 3 | Complete |
 | NOTF-02 | Phase 3 | Complete |
 

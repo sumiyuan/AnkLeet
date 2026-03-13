@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation and Capture** - Working extension that captures LeetCode submissions and stores them locally (completed 2026-03-13)
 - [x] **Phase 2: FSRS Scheduling Engine** - Scheduling engine that calculates review intervals and maintains card state (completed 2026-03-13)
-- [ ] **Phase 3: Dashboard, Reviews, and Notifications** - Full popup UI with daily review queue, self-assessment rating, and browser notifications
+- [x] **Phase 3: Dashboard, Reviews, and Notifications** - Full popup UI with daily review queue, self-assessment rating, and browser notifications (completed 2026-03-13)
 
 ## Phase Details
 
@@ -56,7 +56,7 @@ Plans:
   3. After completing a review on LeetCode and returning to the popup, the user can rate difficulty (Again / Hard / Good / Easy) and the card is updated immediately
   4. A browser notification fires when reviews become due, and the extension icon badge shows the current due count
   5. The settings page accepts and saves an OpenRouter API key and notification preferences without requiring a page reload
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 - [ ] 03-01-PLAN.md — Manifest wiring, popup shell with tab navigation, GET_TODAY_SUBMISSIONS handler, Dashboard tab
 - [ ] 03-02-PLAN.md — Reviews tab with inline rating and card removal, Settings tab with API key and notification prefs
@@ -71,4 +71,4 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|----------------|--------|-----------|
 | 1. Foundation and Capture | 2/2 | Complete   | 2026-03-13 |
 | 2. FSRS Scheduling Engine | 2/2 | Complete   | 2026-03-13 |
-| 3. Dashboard, Reviews, and Notifications | 1/3 | In Progress|  |
+| 3. Dashboard, Reviews, and Notifications | 3/3 | Complete   | 2026-03-13 |
