@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 2 context gathered
-last_updated: "2026-03-13T05:48:08.592Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-13T06:09:33.149Z"
 last_activity: 2026-03-13 — Roadmap created
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 0
 ---
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-foundation-and-capture P01 | 1 | 2 tasks | 5 files |
 | Phase 01-foundation-and-capture P02 | 1 | 2 tasks | 3 files |
 | Phase 01-foundation-and-capture P02 | 30 | 3 tasks | 4 files |
+| Phase 02-fsrs-scheduling-engine P01 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,8 @@ Recent decisions affecting current work:
 - [Phase 01-foundation-and-capture]: Closed Shadow DOM mode for toast — extension internals inaccessible to LeetCode page scripts
 - [Phase 01-foundation-and-capture]: LeetCode uses REST endpoints (POST /submit/ + GET /check/) not GraphQL for submissions — interceptor rewritten after live traffic verification
 - [Phase 01-foundation-and-capture]: background.js saveSubmission detects format by presence of data.question to distinguish GraphQL vs REST /check/ shape
+- [Phase 02-fsrs-scheduling-engine]: UMD global for ts-fsrs is FSRS (not tsfsrs) — confirmed from bundle header inspection
+- [Phase 02-fsrs-scheduling-engine]: maybeCreateCard is fire-and-forget from saveSubmission using .catch() — card failure must not block submission capture
 
 ### Pending Todos
 
@@ -84,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-13T05:48:08.589Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-fsrs-scheduling-engine/02-CONTEXT.md
+Last session: 2026-03-13T06:09:33.146Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None
