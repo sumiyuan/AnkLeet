@@ -1,0 +1,91 @@
+# Requirements: LeetReminder
+
+**Defined:** 2026-03-13
+**Core Value:** Users never forget a LeetCode problem — every submission is tracked and the FSRS algorithm surfaces problems for review at the optimal time.
+
+## v1 Requirements
+
+Requirements for initial release. Each maps to roadmap phases.
+
+### Submission Capture
+
+- [ ] **CAPT-01**: Extension auto-captures accepted and wrong submissions on LeetCode
+- [ ] **CAPT-02**: Each submission stores code, result, timestamp, and problem metadata (title, difficulty, tags, URL)
+
+### FSRS Scheduling
+
+- [ ] **FSRS-01**: FSRS algorithm calculates optimal review intervals for each problem
+- [ ] **FSRS-02**: User rates review difficulty (Again/Hard/Good/Easy) after completing a review
+- [ ] **FSRS-03**: Due-today queue shows problems scheduled for review
+- [ ] **FSRS-04**: Review statistics displayed (retention rate, review count, streak)
+
+### Dashboard
+
+- [ ] **DASH-01**: Daily activity view showing problems attempted today with attempt counts
+- [ ] **DASH-02**: Review queue with links to re-solve problems on LeetCode
+- [ ] **DASH-03**: Settings page for OpenRouter API key and notification preferences
+
+### Notifications
+
+- [ ] **NOTF-01**: Browser notification when reviews are due
+- [ ] **NOTF-02**: Extension icon badge shows count of due reviews
+
+### Storage
+
+- [ ] **STOR-01**: All data stored locally via Chrome storage / IndexedDB (no account needed)
+
+## v2 Requirements
+
+Deferred to future release. Tracked but not in current roadmap.
+
+### AI Feedback
+
+- **AIFB-01**: AI feedback on wrong submissions with user-chosen depth (hint or full explanation)
+- **AIFB-02**: OpenRouter integration with user-provided API key and model selection
+
+### Data Management
+
+- **DATA-01**: Submission history view per problem (all past attempts)
+- **DATA-02**: JSON export/import for backup and migration
+- **DATA-03**: First-attempt vs multi-attempt tracking as FSRS signal
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Cloud sync / user accounts | Local-only for simplicity, privacy-first, zero hosting cost |
+| In-extension code editor | Reviews happen on LeetCode itself |
+| Mobile app | Chrome extension only |
+| Built-in/hosted AI backend | User brings own API key via OpenRouter |
+| Social features / leaderboards | Personal tool, no backend for social graph |
+| LeetCode Premium scraping | Chrome Web Store policy violation, legal risk |
+| Full problem content storage | Copyright concern, storage bloat — link to live page instead |
+| Timer / time-per-problem | Scope creep — dedicated extensions exist for this |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CAPT-01 | — | Pending |
+| CAPT-02 | — | Pending |
+| FSRS-01 | — | Pending |
+| FSRS-02 | — | Pending |
+| FSRS-03 | — | Pending |
+| FSRS-04 | — | Pending |
+| DASH-01 | — | Pending |
+| DASH-02 | — | Pending |
+| DASH-03 | — | Pending |
+| NOTF-01 | — | Pending |
+| NOTF-02 | — | Pending |
+| STOR-01 | — | Pending |
+
+**Coverage:**
+- v1 requirements: 12 total
+- Mapped to phases: 0
+- Unmapped: 12
+
+---
+*Requirements defined: 2026-03-13*
+*Last updated: 2026-03-13 after initial definition*
