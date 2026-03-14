@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: AI Feedback
-status: ready_to_plan
-stopped_at: Roadmap created — Phase 4 ready to plan
-last_updated: "2026-03-13"
-last_activity: 2026-03-13 — Roadmap created for v1.1 (Phases 4-5)
+status: planning
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-03-14T04:28:38.078Z"
+last_activity: 2026-03-13 — Roadmap created for v1.1
 progress:
   total_phases: 2
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
   percent: 0
 ---
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 | v1.0 Phases 1-3 | 7 | — | — |
 
 *Updated after each plan completion*
+| Phase 04-api-integration P01 | 12 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -58,6 +59,9 @@ Recent decisions affecting current work:
 - API call lives in background.js service worker (CORS + key security constraints)
 - Non-streaming response only — loading spinner acceptable for 1-3s Haiku response time
 - Wrong submission dialog replaces auto-dismiss toast; accepted submission rating dialog unchanged
+- [Phase 04-api-integration]: OpenRouter API via plain fetch() with Bearer auth from MV3 service worker — no SDK needed for single POST endpoint
+- [Phase 04-api-integration]: SHOW_WRONG_SUBMISSION carries submissionId (not titleSlug) to avoid race condition on repeated submissions
+- [Phase 04-api-integration]: API key read inside service worker only — never forwarded in sendMessage/sendResponse payloads
 
 ### Pending Todos
 
@@ -69,6 +73,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13
-Stopped at: Roadmap created — Phase 4 ready to plan
+Last session: 2026-03-14T04:28:31.716Z
+Stopped at: Completed 04-01-PLAN.md
 Resume file: None

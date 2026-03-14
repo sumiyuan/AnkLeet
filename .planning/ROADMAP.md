@@ -20,7 +20,7 @@
 
 **Milestone Goal:** Give users AI-powered feedback on wrong submissions — hint or full solution via OpenRouter API — displayed inline on the LeetCode page.
 
-- [ ] **Phase 4: API Integration** - Background service worker calls OpenRouter, reads existing API key, handles errors
+- [x] **Phase 4: API Integration** - Background service worker calls OpenRouter, reads existing API key, handles errors (completed 2026-03-14)
 - [ ] **Phase 5: Wrong Submission Dialog** - Shadow DOM dialog with Hint/Full Solution buttons and inline AI response
 
 ## Phase Details
@@ -34,7 +34,7 @@
   2. The handler reads the API key from the existing `openRouterApiKey` settings field without prompting the user to reconfigure
   3. When the API key is absent, invalid, or rate-limited, the handler returns a descriptive error string instead of throwing or silently failing
   4. `manifest.json` permits the fetch — no Chrome network block occurs
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 04-01-PLAN.md — OpenRouter API handler, error handling, manifest permissions
 
@@ -57,5 +57,5 @@ Plans:
 | 1. Foundation and Capture | v1.0 | 2/2 | Complete | 2026-03-13 |
 | 2. FSRS Scheduling Engine | v1.0 | 2/2 | Complete | 2026-03-13 |
 | 3. Dashboard, Reviews, and Notifications | v1.0 | 3/3 | Complete | 2026-03-13 |
-| 4. API Integration | v1.1 | 0/1 | In progress | - |
+| 4. API Integration | 1/1 | Complete   | 2026-03-14 | - |
 | 5. Wrong Submission Dialog | v1.1 | 0/? | Not started | - |

@@ -16,9 +16,9 @@ Requirements for AI feedback feature. Each maps to roadmap phases.
 
 ### API Integration
 
-- [ ] **API-01**: Extension calls OpenRouter API from the background service worker
-- [ ] **API-02**: Extension uses the existing OpenRouter API key from settings
-- [ ] **API-03**: Extension handles API errors gracefully (invalid key, rate limit, network failure)
+- [x] **API-01**: Extension calls OpenRouter API from the background service worker
+- [x] **API-02**: Extension uses the existing OpenRouter API key from settings
+- [x] **API-03**: Extension handles API errors gracefully (invalid key, rate limit, network failure)
 
 ## Future Requirements
 
@@ -44,9 +44,9 @@ Requirements for AI feedback feature. Each maps to roadmap phases.
 | AIFB-02 | Phase 5 | Pending |
 | AIFB-03 | Phase 5 | Pending |
 | AIFB-04 | Phase 5 | Pending |
-| API-01 | Phase 4 | Pending |
-| API-02 | Phase 4 | Pending |
-| API-03 | Phase 4 | Pending |
+| API-01 | Phase 4 | Complete |
+| API-02 | Phase 4 | Complete |
+| API-03 | Phase 4 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 7 total
