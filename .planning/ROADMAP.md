@@ -34,7 +34,9 @@
   2. The handler reads the API key from the existing `openRouterApiKey` settings field without prompting the user to reconfigure
   3. When the API key is absent, invalid, or rate-limited, the handler returns a descriptive error string instead of throwing or silently failing
   4. `manifest.json` permits the fetch — no Chrome network block occurs
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 04-01-PLAN.md — OpenRouter API handler, error handling, manifest permissions
 
 ### Phase 5: Wrong Submission Dialog
 **Goal**: Users see a persistent wrong-submission dialog on the LeetCode page with AI feedback buttons that render the response inline
@@ -55,5 +57,5 @@
 | 1. Foundation and Capture | v1.0 | 2/2 | Complete | 2026-03-13 |
 | 2. FSRS Scheduling Engine | v1.0 | 2/2 | Complete | 2026-03-13 |
 | 3. Dashboard, Reviews, and Notifications | v1.0 | 3/3 | Complete | 2026-03-13 |
-| 4. API Integration | v1.1 | 0/? | Not started | - |
+| 4. API Integration | v1.1 | 0/1 | In progress | - |
 | 5. Wrong Submission Dialog | v1.1 | 0/? | Not started | - |
