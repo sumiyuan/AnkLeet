@@ -1,143 +1,105 @@
 # Architecture Research
 
-**Domain:** Chrome Extension with Content Script Injection, Background Service Worker, Local Storage, FSRS Spaced Repetition
-**Researched:** 2026-03-13 (updated for v1.1 AI feedback milestone)
-**Confidence:** HIGH (based on direct reading of existing source files + official Chrome docs)
+**Domain:** Chrome MV3 Extension — Interactive AI Chat with Conversation Storage
+**Researched:** 2026-03-15 (updated for v1.2 AI Chat milestone)
+**Confidence:** HIGH (direct source reading + Chrome MV3 documentation)
 
 ---
 
-## v1.1 Focus: AI Feedback Integration Architecture
+## Milestone Context
 
-This document is updated for the v1.1 milestone. The section below documents how the new AI feedback feature integrates with the existing codebase. The original architecture from v1.0 research is preserved at the bottom.
+This document covers the v1.2 architecture: adding an interactive AI chat side panel with per-problem conversation history to the existing extension. The prior v1.0 and v1.1 architecture is preserved below as the baseline.
 
 ---
 
-## Existing Architecture (as-built, v1.0)
+## Existing Architecture (as-built, v1.1)
 
-### Actual Component Inventory
+### Component Inventory
 
 | File | World | Run At | Role |
 |------|-------|--------|------|
-| `background.js` | Service Worker | on-demand | Central coordinator: IndexedDB, FSRS, message routing, alarms, notifications |
+| `background.js` | Service Worker | on-demand | Central coordinator: IndexedDB, FSRS, message routing, alarms, notifications, OpenRouter API calls |
 | `content-main.js` | MAIN | document_start | fetch/XHR interceptor — posts to window |
 | `content-isolated.js` | ISOLATED | document_start | Bridges window.postMessage to chrome.runtime.sendMessage |
-| `content-toast.js` | ISOLATED | document_end | Shadow DOM UI: toast for wrong submissions, rating dialog for accepted |
+| `content-toast.js` | ISOLATED | document_end | Shadow DOM UI: toast, rating dialog, wrong submission dialog with AI feedback |
 | `popup.js` | Popup page | — | Dashboard, Reviews, Settings tabs |
 
 ### Existing Message Types
 
 | Type | Direction | Handler |
 |------|-----------|---------|
-| `SUBMISSION_CAPTURED` | content-isolated → background | `saveSubmission()` — persists, triggers SHOW_TOAST or SHOW_RATING |
-| `RATE_REVIEW` | popup / content-toast → background | `rateReview()` — updates FSRS card |
+| `SUBMISSION_CAPTURED` | content-isolated → background | `saveSubmission()` |
+| `RATE_REVIEW` | content-toast / popup → background | `rateReview()` |
 | `GET_DUE_TODAY` | popup → background | Returns enriched card array |
 | `GET_STATS` | popup → background | Returns `{ totalReviews, retentionRate, streak }` |
 | `GET_TODAY_SUBMISSIONS` | popup → background | Returns submissions from today |
-| `SHOW_TOAST` | background → content-toast | Triggers "submission captured" toast |
+| `GET_AI_FEEDBACK` | content-toast → background | OpenRouter call, returns `{ feedback }` or `{ error }` |
 | `SHOW_RATING` | background → content-toast | Triggers FSRS rating dialog |
+| `SHOW_WRONG_SUBMISSION` | background → content-toast | Triggers wrong submission dialog |
 
-### Wrong Submission Flow (current, pre-AI)
+### Existing Storage Schema
 
+**chrome.storage.local:**
 ```
-User submits wrong answer on LeetCode
-    |
-    v
-content-main.js (MAIN world) intercepts XHR/fetch
-    | window.postMessage({source:'leetreminder', type:'submission', data})
-    v
-content-isolated.js (ISOLATED world)
-    | chrome.runtime.sendMessage({type:'SUBMISSION_CAPTURED', payload})
-    v
-background.js saveSubmission()
-    - Persists to IndexedDB (submissions store)
-    - statusDisplay is NOT 'Accepted' → notifyTab({type:'SHOW_TOAST'})
-    |
-    v
-content-toast.js showToast('✓ Submission captured')
+settings: {
+  captureEnabled: boolean,
+  openRouterApiKey: string,
+  aiModel: string,            // e.g. 'anthropic/claude-haiku-4.5'
+  notificationsEnabled: boolean,
+  notificationTime: string    // 'HH:MM'
+}
+lastNotifiedDate: string      // 'YYYY-MM-DD'
+```
+
+**IndexedDB `leetreminder` at version 2:**
+```
+submissions  keyPath: id (autoIncrement)
+  indexes: submissionId (unique), titleSlug, capturedAt
+  fields: submissionId, titleSlug, title, difficulty, topicTags,
+          url, code, lang, langDisplay, statusDisplay,
+          runtime, memory, capturedAt
+
+cards  keyPath: titleSlug
+  indexes: due, state
+  fields: titleSlug, due, stability, difficulty, elapsed_days,
+          scheduled_days, reps, lapses, state, last_review, createdAt
+
+reviewLogs  keyPath: id (autoIncrement)
+  indexes: titleSlug, reviewedAt
+  fields: titleSlug, rating, oldState, newState, scheduledDays,
+          elapsedDays, reviewedAt
 ```
 
 ---
 
-## v1.1 Integration Design
+## v1.2 Integration Design
 
-### Where the API Call Lives: background.js (service worker)
+### What v1.2 Adds
 
-The Claude API call must live in `background.js`. This is not a choice — it is architecturally forced by three constraints:
+1. A persistent chat button on every LeetCode problem page that opens a chat side panel
+2. Back-and-forth AI conversation (multi-turn message history sent with each API call)
+3. Per-problem conversation storage in IndexedDB
+4. Conversation history view with browse and delete
+5. Hint/solution output from wrong submission dialog written into the current conversation
 
-1. **CORS**: Content scripts are bound by the host page's (leetcode.com's) CORS policy. `api.anthropic.com` is not in LeetCode's CORS allow-list. The fetch will be blocked. Service workers are not subject to page-level CORS — they use host permissions from `manifest.json`.
+### New Components
 
-2. **API key security**: The key is stored in `chrome.storage.local`. Content scripts can read `chrome.storage` but if the key were passed to a content script to make the call, it would be briefly accessible in a context that shares memory with the page. Keeping it exclusively in the service worker context is safer.
+| Component | File | Status | Role |
+|-----------|------|--------|------|
+| Chat side panel UI | `content-chat.js` (new content script) | **NEW** | Persistent chat button + side panel Shadow DOM, manages chat state in-tab |
+| `conversations` IDB store | `background.js` | **NEW** | Persist messages per problem |
+| Chat message handlers | `background.js` | **MODIFIED** | New message types for chat CRUD + AI |
+| Manifest | `manifest.json` | **MODIFIED** | Add `content-chat.js` to content scripts |
 
-3. **Data access**: The submission record (code, error output, titleSlug, language) is in IndexedDB. Only the service worker has an open `db` reference. Passing all that data to a content script to make a call and pass it back is wasteful.
+### Why a Separate content-chat.js (not extending content-toast.js)
 
-### New Message Types Needed
+`content-toast.js` is purpose-built for transient dialogs — one dialog at a time, lifecycle tied to a submission event. The chat panel is persistent: it lives for the entire tab session, survives submission events, and has its own independent lifecycle. Merging them would entangle two unrelated UI lifecycles.
 
-| Type | Direction | Payload | Response |
-|------|-----------|---------|----------|
-| `GET_AI_FEEDBACK` | content-toast → background | `{ submissionId, mode: 'hint' \| 'full' }` | `{ feedback: string }` or `{ error: string }` |
-
-That is the only new message type needed. The existing content-toast.js already has `chrome.runtime.sendMessage` wired for RATE_REVIEW — the same pattern applies here.
-
-No new message types are needed for the background-to-content direction. The AI response travels back as the `sendResponse` callback argument of the existing `chrome.runtime.onMessage` listener. This is a single request-response, not a stream.
-
-### Non-Streaming vs Streaming
-
-**Recommendation: non-streaming for v1.1.**
-
-Streaming (Server-Sent Events from the Claude API) is technically achievable from the service worker — the service worker can call `fetch()` and consume a ReadableStream. However, relaying that stream to the content script requires `chrome.runtime.Port` (long-lived connections), not the simpler `sendMessage`/`sendResponse` pattern. Port adds meaningful complexity:
-
-- The content script must call `chrome.runtime.connect()` instead of `sendMessage()`
-- The service worker must handle `chrome.runtime.onConnect`
-- Both sides must handle disconnect events and cleanup
-- The streaming loop must not block the service worker's event loop
-
-Non-streaming: one `fetch()` call to the Claude API with `stream: false`, wait for the full JSON response, call `sendResponse({ feedback: text })`. This fits perfectly into the existing `return true` async pattern already used for RATE_REVIEW, GET_DUE_TODAY, etc.
-
-The UX tradeoff is a loading spinner instead of progressive text reveal. For the short responses the Claude API returns for hint/full-solution prompts (typically under 500 tokens), the wait is 1-3 seconds — acceptable without streaming.
-
-### Where to Display in Shadow DOM
-
-The AI feedback should display inside the **existing wrong-submission dialog in content-toast.js** — not as a separate popup, not in the extension popup. The user is on the LeetCode problem page when the wrong submission happens. The toast/dialog is already showing. Add the AI buttons there.
-
-The current `showToast()` for wrong submissions is a simple 2-second auto-dismiss toast. This needs to change to a dismissible dialog (like `showRatingDialog`) that includes "Hint" and "Full Solution" buttons and a content area for the AI response.
-
-**New flow:**
-
-```
-Wrong submission captured
-    |
-    v
-background.js saveSubmission()
-    - Saves to IndexedDB (same as now)
-    - Sends SHOW_WRONG_SUBMISSION to tab (replaces SHOW_TOAST for wrong answers)
-      payload: { submissionId, titleSlug, title }
-    |
-    v
-content-toast.js showWrongSubmissionDialog(submissionId, titleSlug, title)
-    - Shadow DOM dialog (similar structure to showRatingDialog)
-    - "Hint" button + "Full Solution" button + "Dismiss" link
-    - User clicks "Hint":
-        | chrome.runtime.sendMessage({type:'GET_AI_FEEDBACK', payload:{submissionId, mode:'hint'}})
-        v
-        [loading state in dialog]
-        |
-        v (sendResponse callback)
-        Render feedback text in dialog content area
-```
-
-### No API Key Guard Needed in Content Script
-
-The content-toast.js dialog does not need to check whether an API key is configured. The check happens in background.js. If no key is configured, background.js returns `{ error: 'No API key configured. Add your Anthropic API key in Settings.' }` and the dialog renders that message inline.
-
-### Submitting the submissionId
-
-The wrong submission flow currently does not send the submissionId to content-toast.js. The SHOW_TOAST message has no payload. To enable the AI feedback request, the SHOW_WRONG_SUBMISSION message must include the submissionId (the IndexedDB `id` field or the LeetCode `submission_id`).
-
-In `saveSubmission()` in background.js, the `addRecord()` call returns the IndexedDB auto-increment key. That key must be captured and included in the `notifyTab` call.
+**Rule of thumb:** Transient dialogs = `content-toast.js`. Persistent panel = `content-chat.js`.
 
 ---
 
-## Updated System Overview (v1.1)
+## System Overview (v1.2)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -147,7 +109,7 @@ In `saveSubmission()` in background.js, the `addRecord()` call returns the Index
 │  │                   LEETCODE.COM TAB                          │     │
 │  │                                                             │     │
 │  │  ┌──────────────────────────────────────────────────────┐   │     │
-│  │  │  content-main.js (MAIN world, document_start)        │   │     │
+│  │  │  content-main.js (MAIN, document_start)              │   │     │
 │  │  │  XHR/fetch interceptor → window.postMessage          │   │     │
 │  │  └──────────────────────────────────────────────────────┘   │     │
 │  │                 |  window.postMessage                        │     │
@@ -157,227 +119,74 @@ In `saveSubmission()` in background.js, the `addRecord()` call returns the Index
 │  │  └──────────────────────────────────────────────────────┘   │     │
 │  │                 |  SUBMISSION_CAPTURED                       │     │
 │  │  ┌──────────────────────────────────────────────────────┐   │     │
-│  │  │  content-toast.js (ISOLATED, document_end)           │   │     │
-│  │  │  Shadow DOM UI:                                       │   │     │
-│  │  │  - showToast (simple info, unchanged)                 │   │     │
-│  │  │  - showWrongSubmissionDialog [NEW]                    │   │     │
-│  │  │    ├── "Hint" btn → GET_AI_FEEDBACK(mode:'hint')      │   │     │
-│  │  │    ├── "Full Solution" btn → GET_AI_FEEDBACK(full)    │   │     │
-│  │  │    └── feedback content area                          │   │     │
-│  │  │  - showRatingDialog (accepted, unchanged)             │   │     │
+│  │  │  content-toast.js (ISOLATED, document_end) [MODIFIED]│   │     │
+│  │  │  - showRatingDialog                                   │   │     │
+│  │  │  - showWrongSubmissionDialog                          │   │     │
+│  │  │    └── on AI response → APPEND_TO_CHAT [NEW]         │   │     │
+│  │  └──────────────────────────────────────────────────────┘   │     │
+│  │                                                             │     │
+│  │  ┌──────────────────────────────────────────────────────┐   │     │
+│  │  │  content-chat.js (ISOLATED, document_end) [NEW]      │   │     │
+│  │  │  - Persistent chat button (bottom-right)             │   │     │
+│  │  │  - Shadow DOM chat side panel (slide in/out)         │   │     │
+│  │  │  - Loads conversation from IDB on panel open         │   │     │
+│  │  │  - Sends user messages → CHAT_SEND_MESSAGE           │   │     │
+│  │  │  - Receives AI response → appends to UI              │   │     │
+│  │  │  - Listens for CHAT_APPEND message from background   │   │     │
 │  │  └──────────────────────────────────────────────────────┘   │     │
 │  └─────────────────────────────────────────────────────────────┘     │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
 │  │               BACKGROUND SERVICE WORKER (background.js)      │    │
-│  │                                                              │    │
-│  │  Existing handlers (unchanged):                              │    │
-│  │  - SUBMISSION_CAPTURED → saveSubmission()                    │    │
-│  │  - RATE_REVIEW → rateReview()                                │    │
-│  │  - GET_DUE_TODAY, GET_STATS, GET_TODAY_SUBMISSIONS           │    │
-│  │                                                              │    │
-│  │  New handler [NEW]:                                          │    │
-│  │  - GET_AI_FEEDBACK                                           │    │
-│  │    1. Read submission from IndexedDB by id                   │    │
-│  │    2. Read API key from chrome.storage.local                 │    │
-│  │    3. Build prompt (code + error + problem context)          │    │
-│  │    4. fetch('https://api.anthropic.com/v1/messages', ...)    │    │
-│  │    5. sendResponse({ feedback }) or { error }                │    │
-│  │                                                              │    │
-│  │  Modified: saveSubmission() [MODIFIED]                       │    │
-│  │  - Capture IndexedDB key from addRecord()                    │    │
-│  │  - Pass key in SHOW_WRONG_SUBMISSION payload                 │    │
+│  │                                                               │    │
+│  │  Existing (unchanged):                                        │    │
+│  │  - SUBMISSION_CAPTURED, RATE_REVIEW, GET_DUE_TODAY           │    │
+│  │  - GET_STATS, GET_TODAY_SUBMISSIONS, GET_AI_FEEDBACK          │    │
+│  │                                                               │    │
+│  │  New handlers [NEW]:                                          │    │
+│  │  - CHAT_SEND_MESSAGE                                          │    │
+│  │    1. Load conversation for titleSlug from IDB                │    │
+│  │    2. Append user message                                     │    │
+│  │    3. Build messages array (full history)                     │    │
+│  │    4. Call OpenRouter with messages array                     │    │
+│  │    5. Append AI response to conversation                      │    │
+│  │    6. Persist updated conversation to IDB                     │    │
+│  │    7. sendResponse({ reply }) or { error }                    │    │
+│  │  - CHAT_LOAD_CONVERSATION                                     │    │
+│  │    Load and return conversation for titleSlug                 │    │
+│  │  - CHAT_CLEAR_CONVERSATION                                    │    │
+│  │    Delete conversation for titleSlug                          │    │
+│  │  - CHAT_APPEND_MESSAGES [NEW, internal use]                  │    │
+│  │    Write messages array into conversations store              │    │
+│  │                                                               │    │
+│  │  Modified [MODIFIED]:                                         │    │
+│  │  - openDatabase() — version 3, adds conversations store      │    │
+│  │  - GET_AI_FEEDBACK — after returning feedback, also write     │    │
+│  │    the exchange into conversations store and notify tab       │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                         |  fetch()                                    │
 │                         v                                            │
-│              api.anthropic.com/v1/messages                           │
+│              openrouter.ai/api/v1/chat/completions                   │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │                   POPUP (popup.js)                           │    │
-│  │  Settings tab: Anthropic API key input → chrome.storage      │    │
-│  │  (No changes needed for AI feedback — runs on content page)  │    │
+│  │                   POPUP (popup.js) [UNCHANGED]                │    │
+│  │  Dashboard / Reviews / Settings                               │    │
+│  │  (History browsing can live here or in popup — see below)     │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
 │  │                       STORAGE LAYER                          │    │
-│  │  chrome.storage.local: { settings: { openRouterApiKey } }    │    │
-│  │  (key name: openRouterApiKey — already in schema, reuse it)  │    │
+│  │  chrome.storage.local: (unchanged)                           │    │
 │  │                                                              │    │
-│  │  IndexedDB (leetreminder, v2):                               │    │
-│  │  - submissions: code, error, titleSlug, statusDisplay        │    │
-│  │  - cards, reviewLogs (unchanged)                             │    │
+│  │  IndexedDB (leetreminder, v3) [MODIFIED — version bump]:     │    │
+│  │  - submissions (unchanged)                                   │    │
+│  │  - cards (unchanged)                                         │    │
+│  │  - reviewLogs (unchanged)                                    │    │
+│  │  - conversations [NEW]                                       │    │
+│  │    keyPath: titleSlug                                        │    │
+│  │    fields: titleSlug, messages[], updatedAt                  │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Component Responsibilities
-
-| Component | Responsibility | Communicates With |
-|-----------|----------------|-------------------|
-| `content-main.js` | XHR/fetch interception in MAIN world (unchanged) | `content-isolated.js` via window.postMessage |
-| `content-isolated.js` | Relay postMessage → chrome.runtime (unchanged) | `background.js` via chrome.runtime.sendMessage |
-| `content-toast.js` | Shadow DOM UI on LeetCode page — wrong submission dialog with AI buttons [modified], rating dialog [unchanged] | `background.js` via chrome.runtime.sendMessage (both directions) |
-| `background.js` | All data operations, FSRS, alarms, notifications, Claude API calls [new GET_AI_FEEDBACK handler] | content-toast (via tabs.sendMessage), popup (via onMessage), IndexedDB, chrome.storage, api.anthropic.com |
-| `popup.js` | Dashboard, Reviews, Settings (Settings tab already has openRouterApiKey field) | `background.js` via chrome.runtime.sendMessage |
-
----
-
-## Architectural Patterns
-
-### Pattern 1: API Calls Belong in the Service Worker
-
-**What:** All external API calls — including Claude — must originate from `background.js`, not from content scripts.
-
-**When to use:** Always, for any cross-origin fetch in a Chrome extension.
-
-**Trade-offs:** The service worker may be terminated between the user clicking the button and the response arriving. In practice, the in-flight `fetch()` keeps the service worker alive (Chrome counts active fetch promises as activity). The 30-second termination timer resets while a fetch is pending.
-
-**Example:**
-```javascript
-// In background.js — inside chrome.runtime.onMessage.addListener
-if (message.type === 'GET_AI_FEEDBACK') {
-  (async () => {
-    if (!db) { try { db = await openDatabase(); } catch (err) { sendResponse({ error: 'DB unavailable' }); return; } }
-
-    // 1. Load submission
-    const submission = await getSubmissionById(db, message.payload.submissionId);
-    if (!submission) { sendResponse({ error: 'Submission not found' }); return; }
-
-    // 2. Load API key
-    const { settings } = await chrome.storage.local.get('settings');
-    const apiKey = settings?.openRouterApiKey;
-    if (!apiKey) { sendResponse({ error: 'No API key configured. Add your Anthropic API key in Settings.' }); return; }
-
-    // 3. Build prompt and call API
-    try {
-      const feedback = await callClaudeAPI(apiKey, submission, message.payload.mode);
-      sendResponse({ feedback });
-    } catch (err) {
-      sendResponse({ error: err.message });
-    }
-  })();
-  return true; // keep message channel open for async response
-}
-```
-
-### Pattern 2: Extend the Wrong-Submission Dialog in content-toast.js
-
-**What:** Replace the current auto-dismiss `showToast()` for wrong submissions with a persistent `showWrongSubmissionDialog()` that includes AI feedback buttons and a content area.
-
-**When to use:** The toast approach is wrong for this feature — the user needs to be able to read the AI response, which requires a persistent dismissible panel.
-
-**Trade-offs:** The existing `removeHost()` function already handles cleanup. The rating dialog pattern (`showRatingDialog`) provides the correct structural template. Reuse the same shadow DOM host id (`leetreminder-toast-host`) so at most one dialog is visible at a time.
-
-**Example structure:**
-```javascript
-function showWrongSubmissionDialog(submissionId, titleSlug, title) {
-  removeHost(); // remove any previous toast/dialog
-
-  const host = document.createElement('div');
-  host.id = 'leetreminder-toast-host';
-  document.body.appendChild(host);
-  const shadow = host.attachShadow({ mode: 'closed' });
-
-  // ... styles (reuse existing dialog styles, add .feedback-area, .loading)
-
-  // Buttons trigger GET_AI_FEEDBACK message
-  hintBtn.addEventListener('click', function () {
-    setLoadingState(true);
-    chrome.runtime.sendMessage(
-      { type: 'GET_AI_FEEDBACK', payload: { submissionId, mode: 'hint' } },
-      function (response) {
-        setLoadingState(false);
-        if (response && response.feedback) {
-          renderFeedback(response.feedback);
-        } else {
-          renderFeedback(response?.error || 'Failed to get feedback.');
-        }
-      }
-    );
-  });
-}
-```
-
-### Pattern 3: Async Response with return true
-
-**What:** The existing pattern in `background.js` for all async message handlers — return `true` from `onMessage.addListener` to keep the response channel open.
-
-**When to use:** Any handler that calls `sendResponse` asynchronously (after an await or inside a Promise).
-
-**Trade-offs:** Must be `true` (literal), not a truthy value. Chrome checks this synchronously before the IIFE runs. All existing handlers already use this pattern — the GET_AI_FEEDBACK handler follows the same structure.
-
----
-
-## Data Flow
-
-### AI Feedback Request Flow
-
-```
-User sees wrong submission captured
-    |
-    v [SHOW_WRONG_SUBMISSION from background, replaces SHOW_TOAST]
-content-toast.js renders wrong submission dialog
-    - Shows: problem title, "Hint" button, "Full Solution" button, "Dismiss"
-    |
-    | (user clicks "Hint")
-    v
-chrome.runtime.sendMessage({
-  type: 'GET_AI_FEEDBACK',
-  payload: { submissionId: <IDB key>, mode: 'hint' }
-})
-    |
-    v [background.js onMessage handler — return true for async]
-background.js GET_AI_FEEDBACK handler:
-  1. getSubmissionById(db, submissionId)
-     → { code, statusDisplay, titleSlug, title, lang, error output }
-  2. chrome.storage.local.get('settings')
-     → settings.openRouterApiKey (field already exists in schema)
-  3. if (!apiKey) → sendResponse({ error: 'No API key...' })
-  4. fetch('https://api.anthropic.com/v1/messages', {
-       method: 'POST',
-       headers: {
-         'x-api-key': apiKey,
-         'anthropic-version': '2023-06-01',
-         'content-type': 'application/json'
-       },
-       body: JSON.stringify({
-         model: 'claude-3-5-haiku-20241022',  // fast, cheap, good for code
-         max_tokens: 1024,
-         messages: [{ role: 'user', content: buildPrompt(submission, mode) }]
-       })
-     })
-  5. const data = await response.json()
-     → data.content[0].text
-  6. sendResponse({ feedback: data.content[0].text })
-    |
-    v [sendResponse callback in content-toast.js]
-content-toast.js renders feedback text in dialog content area
-    - Markdown-lite rendering (or plain text — decide in implementation)
-    - "Dismiss" button remains available
-```
-
-### Modified saveSubmission Flow
-
-```
-saveSubmission(data, tabId):
-  ...
-  const saved = await addRecord(db, record);  // returns IDB key (integer) or null
-  if (saved !== null) {
-    if (record.statusDisplay === 'Accepted') {
-      // unchanged — maybeCreateCard + SHOW_RATING
-    } else if (tabId !== null) {
-      // CHANGED: was notifyTab(tabId, { type: 'SHOW_TOAST' })
-      // NOW:
-      await notifyTab(tabId, {
-        type: 'SHOW_WRONG_SUBMISSION',
-        submissionId: saved,        // the IDB key from addRecord()
-        titleSlug: record.titleSlug,
-        title: record.title
-      });
-    }
-  }
 ```
 
 ---
@@ -386,44 +195,301 @@ saveSubmission(data, tabId):
 
 | Component | Status | What Changes |
 |-----------|--------|--------------|
-| `background.js` | Modified | Add `GET_AI_FEEDBACK` message handler; modify `saveSubmission()` to send `SHOW_WRONG_SUBMISSION` with `submissionId` instead of `SHOW_TOAST` |
-| `content-toast.js` | Modified | Add `showWrongSubmissionDialog()` function; handle `SHOW_WRONG_SUBMISSION` message type; keep `showToast`, `showRatingDialog`, `maybeBlurEditor` unchanged |
-| `manifest.json` | Modified | Add `https://api.anthropic.com/*` to `host_permissions` |
-| `popup.js` | Unchanged | Settings tab already saves `openRouterApiKey` to `chrome.storage.local` — no changes needed |
-| `content-main.js` | Unchanged | Submission interception is unaffected |
-| `content-isolated.js` | Unchanged | Relay logic is unaffected |
+| `content-chat.js` | **NEW** | Persistent chat button + side panel. Full component from scratch. |
+| `background.js` | **MODIFIED** | `openDatabase()` bumped to v3; add `conversations` store creation in `onupgradeneeded`; add `CHAT_SEND_MESSAGE`, `CHAT_LOAD_CONVERSATION`, `CHAT_CLEAR_CONVERSATION` handlers; modify `GET_AI_FEEDBACK` to write hint/solution into the conversation |
+| `manifest.json` | **MODIFIED** | Add `content-chat.js` entry to `content_scripts` array |
+| `content-toast.js` | **MODIFIED** | After receiving AI feedback in `showWrongSubmissionDialog`, also send `APPEND_TO_CHAT` message (or background handles it automatically — see pattern below) |
+| `popup.js` / `popup.html` | **MODIFIED** | Add conversation history tab or section to browse/delete saved conversations |
+| `content-main.js` | Unchanged | Network interception unaffected |
+| `content-isolated.js` | Unchanged | Relay logic unaffected |
+
+---
+
+## Storage Schema Changes
+
+### IndexedDB Version Bump: v2 → v3
+
+```javascript
+// In openDatabase() — onupgradeneeded additions
+if (oldVersion < 3) {
+  // conversations store — one record per problem
+  const convStore = database.createObjectStore('conversations', {
+    keyPath: 'titleSlug'
+  });
+  convStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+}
+```
+
+**conversations record shape:**
+```javascript
+{
+  titleSlug: 'two-sum',           // keyPath — one record per problem
+  messages: [                      // ordered array, append-only at runtime
+    { role: 'user',      content: '...', timestamp: 1710000000000 },
+    { role: 'assistant', content: '...', timestamp: 1710000001234 }
+  ],
+  updatedAt: 1710000001234         // ms timestamp for sorting in history view
+}
+```
+
+**Why keyPath: titleSlug (one conversation per problem, not per session):**
+
+The requirement says "new chat starts fresh each review session" — but also "per-problem conversation storage with history browsing." These are slightly in tension. The simplest reading: one active conversation per problem, cleared when user starts a new session. History browsing shows past conversations — which means either appending sessions end-to-end with session markers, or storing multiple records per problem.
+
+**Recommendation:** One record per problem, append-only. Add a session separator message (type: `system`) when starting a new session. This avoids a more complex multi-record schema while still allowing history browsing.
+
+```javascript
+// Session separator entry in messages array
+{ role: 'system', content: '--- New session ---', timestamp: ... }
+```
+
+If the user explicitly wants distinct session history (like separate conversation threads), a `conversationSessions` store with `{ id, titleSlug, startedAt, messages[] }` is the right schema — but adds complexity. Defer to requirements clarification.
+
+---
+
+## New Message Types
+
+| Type | Direction | Payload | Response |
+|------|-----------|---------|----------|
+| `CHAT_SEND_MESSAGE` | content-chat → background | `{ titleSlug, userMessage }` | `{ reply: string }` or `{ error: string }` |
+| `CHAT_LOAD_CONVERSATION` | content-chat → background | `{ titleSlug }` | `{ messages: [] }` or `{ error }` |
+| `CHAT_CLEAR_CONVERSATION` | content-chat → background | `{ titleSlug }` | `{ ok: true }` or `{ error }` |
+| `CHAT_APPEND` | background → content-chat | `{ messages }` | (fire-and-forget, no response) |
+
+`CHAT_APPEND` is sent from background to the chat panel when `GET_AI_FEEDBACK` completes — it injects the hint/solution exchange into the open panel's message list without requiring the user to reopen the panel.
+
+---
+
+## Data Flow
+
+### Chat Send Flow
+
+```
+User types message and presses Send in chat panel
+    |
+    v
+content-chat.js
+  - Appends user message to local UI immediately (optimistic)
+  - Sets loading indicator
+  | chrome.runtime.sendMessage({ type: 'CHAT_SEND_MESSAGE',
+  |   payload: { titleSlug, userMessage } })
+    v
+background.js CHAT_SEND_MESSAGE handler (return true — async):
+  1. Load conversation from IDB (conversations store, key: titleSlug)
+  2. Append { role: 'user', content: userMessage, timestamp }
+  3. Build messages array from conversation.messages
+     (include last N messages to stay within token budget)
+  4. Call callOpenRouter(apiKey, model, messages)
+     → POST openrouter.ai with full messages array
+  5. Append { role: 'assistant', content: reply, timestamp }
+  6. IDB put() — upsert updated conversation
+  7. sendResponse({ reply })
+    |
+    v (sendResponse callback in content-chat.js)
+content-chat.js
+  - Replace loading indicator with assistant message in UI
+```
+
+### Wrong Submission → Chat Integration Flow
+
+```
+User clicks Hint in wrong submission dialog
+    |
+    v (existing flow)
+background.js GET_AI_FEEDBACK handler
+  1. Loads submission, calls OpenRouter
+  2. sendResponse({ feedback }) → back to content-toast.js dialog
+  3. [NEW] After sendResponse:
+     - Build messages array for this exchange:
+       [{ role: 'user', content: <hint prompt> },
+        { role: 'assistant', content: feedback }]
+     - Upsert into conversations store (titleSlug)
+     - chrome.tabs.sendMessage(tabId, { type: 'CHAT_APPEND', messages })
+    |
+    v
+content-chat.js (if panel is open, receives CHAT_APPEND)
+  - Appends the hint/response exchange to the visible message list
+  (If panel is closed, the messages are in IDB and will appear on next open)
+```
+
+### Load Conversation Flow (Panel Open)
+
+```
+User clicks chat button on LeetCode problem page
+    |
+    v
+content-chat.js
+  - Parse titleSlug from window.location.pathname
+  - chrome.runtime.sendMessage({ type: 'CHAT_LOAD_CONVERSATION',
+      payload: { titleSlug } })
+    |
+    v
+background.js CHAT_LOAD_CONVERSATION:
+  - IDB get(titleSlug) from conversations store
+  - sendResponse({ messages: record?.messages || [] })
+    |
+    v
+content-chat.js
+  - Render messages array in panel UI
+  - Show empty state if messages is []
+```
+
+---
+
+## Architectural Patterns
+
+### Pattern 1: Optimistic UI Append
+
+**What:** Append the user message to the panel UI immediately before the background round-trip completes, then append the assistant message when the response arrives.
+
+**When to use:** Any chat UI with a noticeable API latency (1-3 seconds).
+
+**Trade-offs:** If the API call fails, remove the optimistic message and show an error. Simpler than disabling input; feels more responsive.
+
+**Example:**
+```javascript
+// content-chat.js
+function sendMessage(userText) {
+  appendMessage({ role: 'user', content: userText }); // immediate
+  setLoading(true);
+  chrome.runtime.sendMessage(
+    { type: 'CHAT_SEND_MESSAGE', payload: { titleSlug, userMessage: userText } },
+    function (response) {
+      setLoading(false);
+      if (response?.reply) {
+        appendMessage({ role: 'assistant', content: response.reply });
+      } else {
+        removeLastMessage(); // undo optimistic append
+        showError(response?.error || 'Failed');
+      }
+    }
+  );
+}
+```
+
+### Pattern 2: Conversation History in Background, Not Content Script
+
+**What:** The background service worker owns all conversation read/write. The content script only holds in-memory state for the currently rendered panel session.
+
+**When to use:** Always — content scripts can be recreated on navigation or extension reload, losing any state. The background's IDB reference persists.
+
+**Trade-offs:** Every send/load is an async round-trip through `chrome.runtime.sendMessage`. Acceptable — chat messages are human-speed, not high-frequency.
+
+### Pattern 3: Token Budget Truncation for History
+
+**What:** When building the messages array for an OpenRouter call, limit history to the last N message pairs (e.g., last 10 messages) to stay within model context limits without tracking token counts.
+
+**When to use:** Any multi-turn chat that could accumulate many messages over time.
+
+**Trade-offs:** Older context is lost. For LeetCode problem discussions this is acceptable — conversations rarely need >10 exchanges to resolve a question.
+
+```javascript
+// background.js — in CHAT_SEND_MESSAGE handler
+const MAX_HISTORY = 10;
+const recentMessages = conversation.messages
+  .filter(m => m.role !== 'system')  // exclude session separators
+  .slice(-MAX_HISTORY);
+```
+
+### Pattern 4: Fire-and-Forget CHAT_APPEND from Background
+
+**What:** After `GET_AI_FEEDBACK` completes, background writes to IDB then sends `CHAT_APPEND` to the tab. No response expected or awaited.
+
+**When to use:** Background pushing state to a content script — the content script may not be listening (panel closed), and that is fine.
+
+**Trade-offs:** The `chrome.tabs.sendMessage` call may throw if the panel is not listening. Wrap in try/catch and ignore the error (same pattern as `notifyTab`).
+
+---
+
+## Component Responsibilities
+
+| Component | Responsibility | Communicates With |
+|-----------|----------------|-------------------|
+| `content-main.js` | Network interception (unchanged) | `content-isolated.js` via window.postMessage |
+| `content-isolated.js` | Relay postMessage → chrome.runtime (unchanged) | `background.js` via sendMessage |
+| `content-toast.js` | Transient dialogs: rating, wrong submission with AI (minor mod) | `background.js` via sendMessage |
+| `content-chat.js` | Persistent chat button + side panel, renders conversation | `background.js` via sendMessage (both directions) |
+| `background.js` | All data, AI calls, message routing — chat CRUD added | content-toast, content-chat via tabs.sendMessage; OpenRouter; IndexedDB |
+| `popup.js` | Dashboard, Settings, conversation history view (new tab/section) | `background.js` via sendMessage |
+
+---
+
+## File Structure After v1.2
+
+```
+extension/
+├── manifest.json          # + content-chat.js entry
+├── background.js          # + IDB v3 migration, chat handlers, GET_AI_FEEDBACK mod
+├── content-main.js        # unchanged
+├── content-isolated.js    # unchanged
+├── content-toast.js       # minor mod: fire CHAT_APPEND after AI feedback
+├── content-chat.js        # NEW — persistent chat button + side panel
+├── popup.html             # + conversation history section
+├── popup.js               # + load/delete conversations
+├── popup.css              # minor additions for history UI
+├── lib/
+│   └── ts-fsrs.umd.js     # unchanged
+└── icons/
+```
 
 ---
 
 ## Build Order
 
-The dependency chain for v1.1 is shallow — this is an additive feature:
+Dependencies flow from data layer up to UI:
 
 ```
-1. manifest.json — add host_permissions for api.anthropic.com
-   (Required before any fetch to Anthropic will be permitted)
-        |
-        v
-2. background.js — modify saveSubmission() + add GET_AI_FEEDBACK handler
-   (saveSubmission change must land before content-toast change, or
-    the dialog will receive messages it can't handle yet)
-        |
-        v
-3. content-toast.js — add showWrongSubmissionDialog() + SHOW_WRONG_SUBMISSION handler
-   (Replaces the SHOW_TOAST path for wrong submissions)
-        |
-        v
-4. Manual test: submit a wrong answer on LeetCode, verify dialog appears,
-   verify hint/full-solution buttons call API, verify response renders
-        |
-        v
-5. Test: no API key configured → error message renders inline (no crash)
-6. Test: API key invalid → error message renders inline
-7. Test: accepted submission still shows rating dialog (regression)
-8. Test: dismiss works, no memory leaks (removeHost called)
-```
+Phase 1: Storage — IDB v3 migration
+  - background.js: openDatabase() version bump to 3
+  - Add conversations store + updatedAt index in onupgradeneeded
+  - Add CRUD helpers: getConversation(), putConversation(), clearConversation()
+  RISK: version bump must be backward-compatible — existing v2 data must survive
+  TEST: existing submissions, cards, reviewLogs untouched after migration
 
-The popup Settings tab already stores `openRouterApiKey`. No popup changes are needed unless the field label should be updated from "OpenRouter API Key" to "Anthropic API Key" to match the actual integration.
+        |
+        v
+
+Phase 2: Chat Message Handler — background.js
+  - CHAT_SEND_MESSAGE handler
+    (builds messages array, calls callOpenRouter, persists, returns reply)
+  - CHAT_LOAD_CONVERSATION handler
+  - CHAT_CLEAR_CONVERSATION handler
+  - Modify GET_AI_FEEDBACK to write exchange into conversations + send CHAT_APPEND
+  TEST: unit-style: send message, verify IDB record, verify OpenRouter called with
+        correct messages array; verify existing GET_AI_FEEDBACK still returns feedback
+
+        |
+        v
+
+Phase 3: Chat Side Panel UI — content-chat.js (new file)
+  - Persistent chat button (fixed position, bottom-right, above wrong-submission panel z)
+  - Shadow DOM side panel that slides in from the right
+  - Panel open: send CHAT_LOAD_CONVERSATION, render messages
+  - Input + send: fire CHAT_SEND_MESSAGE, optimistic append
+  - CHAT_APPEND listener: append injected messages when panel is open
+  - Empty state, loading state, error state
+  - manifest.json: add content-chat.js to content_scripts
+  TEST: button visible on leetcode.com/problems/*, panel opens/closes, messages render,
+        send message round-trip works, CHAT_APPEND injects correctly
+
+        |
+        v
+
+Phase 4: Wrong Submission → Chat Integration
+  - content-toast.js: no change needed if background handles CHAT_APPEND automatically
+    (background fires CHAT_APPEND after GET_AI_FEEDBACK — Phase 2 handles this)
+  TEST: submit wrong answer → get hint → open chat panel → verify exchange appears
+
+        |
+        v
+
+Phase 5: Conversation History in Popup
+  - popup.html/js: new "Chats" section or tab
+  - Load all conversations (index on updatedAt, sorted descending)
+  - Show titleSlug + last message preview + delete button
+  - Delete: CHAT_CLEAR_CONVERSATION
+  TEST: history shows after sending messages, delete removes from IDB + UI
+```
 
 ---
 
@@ -433,124 +499,97 @@ The popup Settings tab already stores `openRouterApiKey`. No popup changes are n
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| `api.anthropic.com` | `fetch()` from `background.js` service worker with `x-api-key` header | Must add to `host_permissions` in manifest.json; non-streaming (`stream: false`); key from `chrome.storage.local` |
+| `openrouter.ai/api/v1/chat/completions` | `fetch()` from `background.js` | Existing pattern — now passes `messages` array (multi-turn) instead of single user message |
 
-### Internal Boundaries (new/modified)
+### Internal Boundaries (new/modified for v1.2)
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| `background.js` → `content-toast.js` | `chrome.tabs.sendMessage(tabId, { type: 'SHOW_WRONG_SUBMISSION', submissionId, ... })` | Replaces `SHOW_TOAST` for wrong submissions; submissionId is the IDB auto-increment key |
-| `content-toast.js` → `background.js` | `chrome.runtime.sendMessage({ type: 'GET_AI_FEEDBACK', payload: { submissionId, mode } })` | Same pattern as `RATE_REVIEW`; uses `return true` for async response |
+| `content-chat.js` → `background.js` | `chrome.runtime.sendMessage` for CHAT_SEND_MESSAGE, CHAT_LOAD_CONVERSATION, CHAT_CLEAR_CONVERSATION | Same pattern as existing sendMessage calls; `return true` for async responses |
+| `background.js` → `content-chat.js` | `chrome.tabs.sendMessage(tabId, { type: 'CHAT_APPEND', ... })` | Fire-and-forget; tab may not be listening; wrap in try/catch |
+| `content-toast.js` → chat | Indirect — background handles CHAT_APPEND after GET_AI_FEEDBACK | content-toast.js does NOT need to know about content-chat.js |
+| `background.js` → `conversations` IDB store | `getConversation(db, titleSlug)` / `putConversation(db, record)` | New helpers following same promise-wrapping pattern as existing IDB functions |
 
 ---
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Fetching Claude API from a Content Script
+### Anti-Pattern 1: Storing Conversation State in the Content Script
 
-**What people do:** Call `fetch('https://api.anthropic.com/...')` directly from `content-toast.js`.
+**What people do:** Keep the messages array in a module-level variable in `content-chat.js` and only persist to IDB when the panel closes.
 
-**Why it's wrong:** CORS blocks all cross-origin requests from content scripts to domains not permitted by the host page (leetcode.com). The request fails with a network error. Additionally, the API key would be temporarily accessible in a context closer to the page's memory.
+**Why it's wrong:** Content scripts are destroyed and recreated on navigation, extension reload, and tab refresh. Any in-memory state is silently lost. The user switches problems, comes back, and the conversation is gone.
 
-**Do this instead:** Send `GET_AI_FEEDBACK` to `background.js`. Make the fetch there.
+**Do this instead:** Persist to IDB on every message via background. The content script only holds the current render state (what's displayed right now).
 
-### Anti-Pattern 2: Using chrome.runtime.Port for Non-Streaming Responses
+### Anti-Pattern 2: Sending Full Conversation History on Every Turn Without Truncation
 
-**What people do:** Implement long-lived Port connections to support streaming, even when non-streaming is sufficient.
+**What people do:** Pass the entire `messages` array to the OpenRouter API on every turn, growing unboundedly.
 
-**Why it's wrong:** Port adds meaningful complexity — both sides must handle connect/disconnect events, cleanup on error, and the streaming loop. For a single request-response with a 1-3 second wait, a loading spinner and `return true` async pattern is simpler and correct.
+**Why it's wrong:** Context window limits vary by model (8k–128k tokens). A long conversation on a hard problem can silently fail with a context overflow error, or run up large token costs.
 
-**Do this instead:** Use non-streaming API call (`stream: false` in the Claude API body). Return the complete response via `sendResponse`. Add a loading state in the dialog.
+**Do this instead:** Slice to the last N message pairs before building the API request body. Store the full history in IDB regardless — truncation is only for the API payload, not for the stored record.
 
-### Anti-Pattern 3: Showing AI Feedback in the Popup Instead of on the Page
+### Anti-Pattern 3: Having content-chat.js Directly Communicate With content-toast.js
 
-**What people do:** Route the user to the extension popup to see AI feedback after a wrong submission.
+**What people do:** Use window.postMessage between content-chat.js and content-toast.js to coordinate the "inject hint into chat" flow.
 
-**Why it's wrong:** The user is on the LeetCode problem page. Opening the popup breaks their context and requires an extra click. The wrong submission dialog is already open on the page. Add the AI buttons there.
+**Why it's wrong:** window.postMessage is the MAIN↔ISOLATED bridge, not an ISOLATED↔ISOLATED channel. Two ISOLATED content scripts cannot postMessage each other via window without polluting the page's message bus. More importantly, it creates a tight coupling between two scripts with independent lifecycles.
 
-**Do this instead:** Extend `showWrongSubmissionDialog` in `content-toast.js` to include AI request buttons and a content area.
+**Do this instead:** Route through background. `GET_AI_FEEDBACK` handler fires `CHAT_APPEND` to the tab after completing. `content-chat.js` listens for it. The two content scripts never communicate directly.
 
-### Anti-Pattern 4: Not Capturing the IDB Key from addRecord()
+### Anti-Pattern 4: Opening a New Extension Popup/Tab for Chat History
 
-**What people do:** Send a `SHOW_WRONG_SUBMISSION` message with only `titleSlug`, then look up the latest submission by `titleSlug` in `GET_AI_FEEDBACK`.
+**What people do:** Create a separate `history.html` page for conversation history.
 
-**Why it's wrong:** A user can submit multiple wrong answers rapidly. Looking up "latest by titleSlug" is a race condition — a second submission may overwrite which record is "latest" by the time the user clicks the button. The IDB auto-increment key uniquely identifies the exact submission.
+**Why it's wrong:** The popup (`popup.html`) already has a tabbed UI (Dashboard, Reviews, Settings). Adding conversation history as another tab in the existing popup is zero additional navigation overhead and reuses the existing popup infrastructure.
 
-**Do this instead:** `addRecord()` already returns the auto-increment key. Pass `saved` (the return value) as `submissionId` in the SHOW_WRONG_SUBMISSION payload.
+**Do this instead:** Add a "Chats" section to `popup.js` / `popup.html` — another tab in the existing interface.
+
+### Anti-Pattern 5: Bumping IDB Version Without Handling onblocked
+
+**What people do:** Increment the IDB version without handling the `onblocked` event, causing silent failures when the user has the extension open in multiple tabs.
+
+**Why it's wrong:** If another tab has the DB open at v2, the v3 upgrade is blocked. The `onupgradeneeded` handler never fires. The service worker fails to open the DB.
+
+**Do this instead:** The existing `openDatabase()` already has `request.onblocked = () => {}` (silently wait). Keep this. The `db.onversionchange = () => db.close()` on the module-level `db` reference handles the close-on-upgrade path.
 
 ---
 
-## Settings Schema Note
+## Scaling Considerations
 
-The `chrome.storage.local` settings object currently uses `openRouterApiKey` as the field name (set by the Settings tab in popup.js). The project description says the AI integration is Anthropic/Claude, not OpenRouter. The `GET_AI_FEEDBACK` handler in background.js should read `settings.openRouterApiKey` as-is (the field already exists and is populated by the current Settings UI), unless the Settings tab label/field is renamed. This is a cosmetic decision but should be consistent — if the label in popup.html is updated to "Anthropic API Key", the storage key name can stay the same to avoid a migration.
+This is a local-only Chrome extension — "scaling" means handling large amounts of local data.
 
----
-
-## Original Architecture (v1.0)
-
-### System Overview
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          CHROME BROWSER                              │
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐     │
-│  │                   LEETCODE.COM TAB                          │     │
-│  │                                                             │     │
-│  │  ┌──────────────────────────────────────────────────────┐   │     │
-│  │  │           ISOLATED WORLD (Content Scripts)           │   │     │
-│  │  │  content-isolated.js — relay postMessage → runtime   │   │     │
-│  │  │  content-toast.js — Shadow DOM UI                    │   │     │
-│  │  └──────────────────────────────────────────────────────┘   │     │
-│  │                                                             │     │
-│  │  ┌──────────────────────────────────────────────────────┐   │     │
-│  │  │           MAIN WORLD (content-main.js)               │   │     │
-│  │  │  Overrides window.fetch / XMLHttpRequest             │   │     │
-│  │  │  Intercepts LeetCode submission API calls            │   │     │
-│  │  │  Posts to window for content-isolated.js to relay   │   │     │
-│  │  └──────────────────────────────────────────────────────┘   │     │
-│  └─────────────────────────────────────────────────────────────┘     │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │               BACKGROUND SERVICE WORKER (background.js)      │    │
-│  │  IndexedDB, FSRS, alarms, notifications, message routing     │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │                   POPUP (popup.html + popup.js)               │    │
-│  │  Dashboard / Reviews / Settings tabs                          │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │                       STORAGE LAYER                          │    │
-│  │  chrome.storage.local: settings (captureEnabled, API key,    │    │
-│  │    notifications, notification time)                         │    │
-│  │  IndexedDB v2: submissions, cards, reviewLogs                │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-### v1.0 Architectural Patterns
-
-**Pattern 1: MAIN World Script Injection for Network Interception**
-Content scripts run in an isolated JavaScript context and cannot intercept `window.fetch` from the page. Injecting with `"world": "MAIN"` in manifest content scripts (Chrome 111+) shares the same window object as the page.
-
-**Pattern 2: Event-Driven Service Worker with Persistent Storage**
-Service workers terminate after 30 seconds of inactivity. All state lives in IndexedDB or chrome.storage.local. Listeners must register at the top level of background.js synchronously.
-
-**Pattern 3: chrome.alarms for Review Scheduling**
-`chrome.alarms` persists across service worker restarts and can wake a terminated service worker. Minimum period 30s (Chrome 120+).
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| 10s of problems | No concern — IDB handles this trivially |
+| 100s of problems with long histories | Truncate history on API calls (Pattern 3); add pagination to history view in popup |
+| 1000+ problems, years of use | Consider IDB cursor-based pagination for history view; consider capping max messages per conversation (e.g. 200 messages) with a "start new chat" prompt |
 
 ---
 
 ## Sources
 
-- [Chrome Extension Message Passing — Official Docs](https://developer.chrome.com/docs/extensions/develop/concepts/messaging) — HIGH confidence
+- Direct reading of `extension/background.js`, `content-toast.js`, `content-isolated.js`, `content-main.js`, `manifest.json` — HIGHEST confidence
+- [Chrome Extension Message Passing](https://developer.chrome.com/docs/extensions/develop/concepts/messaging) — HIGH confidence
 - [Chrome Extension Service Worker Lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) — HIGH confidence
-- [Content Scripts Documentation](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts) — HIGH confidence
-- [Anthropic Messages API Reference](https://docs.anthropic.com/en/api/messages) — HIGH confidence (non-streaming, x-api-key header pattern)
-- Direct reading of existing source files (background.js, content-toast.js, content-isolated.js, content-main.js, popup.js, manifest.json) — HIGHEST confidence
+- [IndexedDB API — IDBDatabase.onversionchange](https://developer.mozilla.org/en-US/docs/Web/API/IDBDatabase/versionchange_event) — HIGH confidence
+- [OpenRouter API — Chat Completions](https://openrouter.ai/docs/api-reference/chat-completion) — HIGH confidence
 
 ---
-*Architecture research for: Chrome Extension with Content Script Injection, Service Worker, FSRS Spaced Repetition*
-*Updated: 2026-03-13 — v1.1 AI feedback integration*
+
+## Prior Architecture (v1.0/v1.1)
+
+The original v1.0 and v1.1 architecture documents are preserved in git history. Key decisions from those milestones that remain in force:
+
+- API calls in service worker only (CORS + key security)
+- Non-streaming responses (no Port complexity)
+- Shadow DOM for all extension UI on LeetCode page
+- `return true` in `onMessage.addListener` for async handlers
+- `store.add()` with ConstraintError suppression for dedup
+- UMD bundle for ts-fsrs (no ES modules in service workers)
+
+---
+
+*Architecture research for: Chrome MV3 Extension — v1.2 AI Chat Integration*
+*Updated: 2026-03-15*

@@ -1,41 +1,27 @@
 # Feature Research
 
-**Domain:** AI-powered code feedback on wrong LeetCode submissions (Chrome extension, MV3)
-**Researched:** 2026-03-13
-**Confidence:** HIGH (API patterns from official docs), MEDIUM (UX patterns from community/competitor data)
+**Domain:** Interactive AI chat side panel with per-problem conversation history (Chrome extension, MV3)
+**Researched:** 2026-03-15
+**Confidence:** HIGH (UX patterns from ChatGPT/VS Code/Cursor/Gemini Workspace), MEDIUM (Chrome extension-specific implementation details)
 
-> **Scope note:** This is v1.1 milestone research. The existing v1.0 features (submission capture,
-> FSRS queue, rating dialog, toast, badge, settings) are already built. This file covers only
-> the NEW AI feedback features being added.
+> **Scope note:** This is v1.2 milestone research. The existing v1.0–v1.1 features (submission
+> capture, FSRS queue, rating dialog, toast, badge, settings, one-shot AI feedback popup) are
+> already built. This file covers ONLY the NEW chat features being added.
 
 ---
 
-## What the Existing Pipeline Already Provides
+## What the Existing Pipeline Already Provides (Dependencies)
 
-The submission capture pipeline stores these fields — all available as context for AI calls:
+The v1.1 wrong-submission panel provides these hooks that v1.2 extends:
 
-| Field | Source | Notes |
-|-------|--------|-------|
-| `titleSlug` | REST `/check/` | Problem identifier |
-| `title` | REST or GraphQL | Human-readable problem name |
-| `difficulty` | GraphQL path only | null on REST path |
-| `topicTags[]` | GraphQL path only | empty on REST path |
-| `code` | REST or GraphQL | User's submitted code |
-| `lang` / `langDisplay` | Both paths | Programming language |
-| `statusDisplay` | Both paths | "Wrong Answer", "Time Limit Exceeded", "Runtime Error" |
-| `runtime` / `memory` | REST path | Performance stats |
-
-**Not currently stored (in raw `/check/` response but discarded):**
-
-| Field | Available in raw response | Value for AI |
-|-------|--------------------------|--------------|
-| `last_testcase` | Yes (REST) | Specific failing input — makes feedback concrete |
-| `expected_output` | Yes (REST) | What the correct answer was |
-| `code_output` | Yes (REST) | What the user's code actually produced |
-
-These three fields transform generic feedback ("check your edge cases") into specific feedback ("your code returns `3` for input `[1,2,3]` but expected `6`"). They are HIGH value and require a minor schema addition.
-
-The wrong-submission path in `background.js` currently calls `notifyTab(tabId, { type: 'SHOW_TOAST' })`. The AI feedback feature replaces this with a richer payload.
+| Existing piece | How v1.2 uses it |
+|----------------|-----------------|
+| Shadow DOM popup pattern in `content-toast.js` | Chat panel is a new persistent Shadow DOM host alongside the existing popup |
+| `chrome.runtime.sendMessage` + background `callOpenRouter` | Chat uses same OpenRouter call path, wrapping multi-turn messages array |
+| `settings.openRouterApiKey` + `settings.aiModel` | Chat reads same stored key and model — no new settings needed |
+| IndexedDB (currently: `submissions`, `cards`, `reviewLogs` stores) | New `conversations` store added at DB version bump |
+| Existing hint/solution text produced in v1.1 panel | First turn of chat is pre-populated from that output, not duplicated |
+| Problem `titleSlug` from URL (`/problems/([^/]+)`) | Chat keyed per-problem by `titleSlug` |
 
 ---
 
@@ -43,104 +29,117 @@ The wrong-submission path in `background.js` currently calls `notifyTab(tabId, {
 
 ### Table Stakes (Users Expect These)
 
-Features users assume exist. Missing these = product feels incomplete.
+Features users assume exist in any AI chat interface. Missing these = product feels broken or unfinished.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| "Hint" button on wrong-submission popup | Every AI coding tool (LeetCopilot, Copilot, ChatGPT) offers tiered hints; users expect graduated help | LOW | Replaces the plain toast; same Shadow DOM popup pattern as existing rating dialog |
-| "Full Solution" button on same popup | The counterpart to hints; users need an escape hatch when genuinely stuck | LOW | Same popup, different system prompt sent to Claude |
-| Loading state while AI generates | Without it, the popup appears frozen for 5-15 seconds after click | LOW | Spinner or "Thinking..." text while fetch is in flight |
-| Error state for missing API key | User forgot to configure key — must show an actionable message, not a broken UI | LOW | Check `chrome.storage.local` before calling API; show "Add your API key in Settings" with a shortcut |
-| Error state for API failures | 429 rate limit, 529 overloaded, network error — these happen routinely | LOW | Display human-readable error in the popup; never show raw JSON |
-| Dismiss / close button | User has read the response and wants to continue coding | LOW | Already in existing dialog pattern (`host.remove()`) |
-| Response displayed inline in the popup | Must appear where the user triggered it — not a new tab, not the extension popup | MEDIUM | Shadow DOM popup in `content-toast.js` is the right surface; requires expanding the existing dialog with a response area |
+| Persistent chat trigger button on LeetCode problem pages | Every AI coding tool (Cursor, Copilot, Gemini Workspace) has a persistent button that opens the panel; ad-hoc manual open is not a workflow | LOW | Fixed-position button injected via content script; stays across navigation within the problem page |
+| Toggle open/close | User needs to focus on code without panel in the way; all side panels in VS Code/Cursor are togglable | LOW | Single button toggles. Panel state (open/closed) does not persist across page loads — default closed |
+| Message input field + send action | Core of any chat: textarea at bottom, submit on Enter or Send button | LOW | Enter to send is the ChatGPT/Claude standard; Shift+Enter for newline |
+| User message displayed above AI response | Chat bubble pattern: user message right-aligned or labeled, AI response left-aligned/labeled | LOW | Shadow DOM prevents LeetCode styles interfering; simple flex column layout |
+| Loading / thinking indicator while AI responds | Without it the UI appears frozen during the 2–5 second API call | LOW | "Thinking..." text or animated dots; identical to the loading state in v1.1 popup |
+| Error states: missing API key, API failure | OpenRouter 429, network errors, missing key are routine; user must see actionable message not a broken UI | LOW | Reuse v1.1 error handling logic; show inline error in chat thread |
+| Per-session conversation continuity | User sends several follow-up messages in one sitting; each message adds to the thread — AI "remembers" what was said earlier | MEDIUM | All messages in current session passed in `messages[]` array to OpenRouter; no special backend needed |
+| Close / clear / new chat ability | User finishes a problem and wants a fresh chat for the next one | LOW | "New chat" button clears the current in-memory thread; prompts save or discard |
+| Markdown rendering of AI responses | AI outputs code blocks, bold text, bullet lists; raw backtick text is noticeably bad for code explanations | LOW | Minimal regex renderer already planned/exists from v1.1 panel; same approach applies here |
+| Scroll to latest message | As the thread grows, the view should stay pinned to the most recent message automatically | LOW | Standard CSS `overflow-y: auto` + `scrollIntoView` on new message append |
 
 ### Differentiators (Competitive Advantage)
 
-Features that set the product apart. Not required, but valuable.
+Features that set this product apart. Not required, but add meaningful value.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Hint vs Full Solution as distinct UX — not just different prompts | Hint shows "think about X approach" with no code; Full Solution shows working code with explanation. Visual distinction (different button colors, labeled response header) reinforces that one spoils the answer | MEDIUM | Two system prompts; response area labels which mode was requested; hint buttons styled differently from solution button |
-| Contextual prompt: include failing test case, expected output, actual output | Passing the specific failing test case transforms feedback from generic to targeted. "Your code returns 3 for [1,2,3] but expected 6" is actionable; "your logic might be wrong" is not | MEDIUM | Requires storing `last_testcase`, `expected_output`, `code_output` from the `/check/` response at capture time — minor schema change in `background.js` |
-| Streaming response rendering | Response appears token-by-token rather than all-at-once after a blank pause. Dramatically improves perceived responsiveness for 3-10 second responses | HIGH | Architecture: content script opens a long-lived port (`chrome.runtime.connect`) to service worker; service worker streams fetch and relays chunks via `port.postMessage`. Service worker stays alive while port is open. Non-trivial but well-understood MV3 pattern. |
-| Markdown rendering for AI response | Claude outputs markdown: backtick code blocks, bold text, bullet lists. Raw text with literal backticks is noticeably bad UX for code explanations | MEDIUM | No external library needed for v1.1: a minimal regex-based renderer (~50 lines) handles the common patterns. Works inside Shadow DOM without CSP issues. |
-| Hint framing that avoids spoiling the approach | Hint system prompt explicitly forbids mentioning the algorithm name or showing code — pure Socratic nudge | LOW | Pure prompt engineering, zero code complexity. Differentiates from tools that call partial solutions "hints". |
+| Per-problem conversation history persisted to IndexedDB | Conversation survives page reload, browser restart; user can return to a problem next week and see prior chat. No other LeetCode-specific tool provides this | MEDIUM | New `conversations` IndexedDB store; key by `titleSlug`; auto-save on every message sent |
+| History browser in popup or panel: list past conversations by problem | User can review old hints without re-solving; reinforces learning. Gemini Workspace and ChatGPT sidebar both show conversation list | MEDIUM | Either a new tab in the popup or a "History" pane that slides in from the panel; each item shows titleSlug + last-message preview + date |
+| Delete individual conversation | User wants to clean up spoiled solutions; privacy hygiene | LOW | Per-item delete button in history list; confirms before delete |
+| v1.1 hint/solution output seeded as first message in chat | User clicks "Hint" from wrong-submission panel → hint is the opening AI turn in the chat for that problem; no duplication, no context loss | MEDIUM | Wrong-submission panel sends a message to the chat panel (or directly writes to the conversations store) before opening; chat panel displays it as the first assistant turn |
+| Problem context auto-injected as system prompt | Problem slug and language passed automatically; user never has to say "I'm solving two-sum in Python". Cursor/Copilot do this with file context | LOW | System prompt template: "The user is solving LeetCode problem `{titleSlug}` in `{lang}`." Populated from URL + last submission record |
+| Model selector carries over from v1.1 settings | User already configured their preferred model for hints; chat uses same model without extra setup | LOW | Read `settings.aiModel` same as v1.1; no new UI needed |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that seem good but create problems.
+Features that seem obvious but create significant problems.
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Auto-trigger AI on every wrong submission | "Feels smart and proactive" | Burns API credits on every test run and typo. Chrome Web Store policies are strict about unexpected network calls. Users want control over when AI is invoked. | Keep "Hint" and "Full Solution" as explicit user-triggered buttons only |
-| Chat / follow-up questions in the popup | Natural extension — "explain more", "show an alternative approach" | Multiplies UI complexity: input field, message history, scroll state, multi-turn context management. Out of scope for this milestone. | Single-shot response for v1.1; chat can be v1.2+ once the single-shot UX is validated |
-| Caching AI responses in IndexedDB | "Efficient — same submission won't re-call the API" | Wrong submissions for the same problem often differ (different code, different failing test). Stale cache gives wrong feedback. Adds DB schema complexity. | No caching for v1.1. Users who click "Hint" again get a fresh response. |
-| Fetching problem description from LeetCode GraphQL | "More context = better feedback" | LeetCode's GraphQL requires auth cookies that rotate. Adds a fragile network call and a new failure mode. Claude can infer the problem from titleSlug + user code alone. | Use titleSlug + code + error message + failing test case. Sufficient for good feedback. |
-| Streaming via `sendMessage` loop | Streaming UX is desirable | `chrome.runtime.sendMessage` is not designed for high-frequency token-by-token relay. Each call has overhead; 50+ calls per response creates jank. | Use `chrome.runtime.connect()` (long-lived port) for streaming, not `sendMessage` |
+| Auto-open chat on wrong submission | "Smart and proactive" | Interrupts focus at exactly the wrong moment (user is reading the error); also duplicates with wrong-submission panel, causing two UI surfaces to appear simultaneously | Keep chat button passive; let user open it when they choose |
+| Streaming responses in chat | Token-by-token display is standard in ChatGPT/Claude | MV3 service worker streaming via `chrome.runtime.connect` is valid but adds meaningful complexity; non-streaming responses on OpenRouter are 1–3s, acceptable for v1.2 | Non-streaming in v1.2; streaming deferred to v1.3+ when the base chat is stable |
+| Sync conversation history across devices | "I use multiple computers" | Requires a backend, user accounts, and encryption for API keys in transit — completely out of stated scope; adds privacy risk | Local-only; explicitly call out in UI ("Saved locally on this device") |
+| Infinite conversation history (no cleanup) | "Keep everything" | IndexedDB has no hard limit, but unbounded growth causes slow history queries and storage bloat over months of daily use | Soft limit: keep the 20 most recent messages per problem; show a notice when older messages are trimmed. Alternatively, keep last N conversations (e.g., 50 problems) with delete-all option |
+| Full problem statement scraping to inject as context | "More context = better answers" | LeetCode's DOM changes frequently; scraping is fragile and may break silently. GraphQL requires rotating auth cookies. | Use titleSlug + user's code + status in system prompt. Claude can infer the problem from these alone with high accuracy |
+| Rich text editor for user input | "Format my code properly" | Users are asking short follow-up questions, not writing documents; a textarea is appropriate. Rich editors add bundle weight and keyboard trap complexity in Shadow DOM | Plain `<textarea>` with monospace font; markdown in AI response only |
+| Export / share conversation | "I want to share my solution journey" | Niche use case; adds file download logic or share API; out of scope for a spaced-repetition focus | Defer indefinitely; if requested by multiple users, ship later |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Wrong submission captured] (existing: saveSubmission → SHOW_TOAST)
-    └──triggers──> [AI Feedback Popup with Hint + Solution buttons]
-                       ├──requires──> [API key in chrome.storage.local]
-                       │                  └──exists: settings.openRouterApiKey (may rename to anthropicApiKey)
-                       ├──requires──> [Explicit user button click (Hint OR Full Solution)]
-                       │
-                       ├──AI call path (non-streaming, v1.1)──>
-                       │      [background.js: fetch POST /v1/messages, await full response]
-                       │          └──requires──> [submission payload in message to background]
-                       │                             └──enhanced by──> [last_testcase + expected_output + code_output]
-                       │                                                   └──requires──> [schema addition at capture time]
-                       │
-                       ├──AI call path (streaming, future)──>
-                       │      [content script: chrome.runtime.connect() opens port]
-                       │          └──[background: streaming fetch, port.postMessage per chunk]
-                       │
-                       ├──enhances──> [Markdown rendering of response]
-                       └──enhances──> [Streaming response]
+[Chat trigger button] (persistent, all LeetCode problem pages)
+    └──opens──> [Chat side panel]
+                    ├──requires──> [settings.openRouterApiKey]  (already exists v1.1)
+                    ├──requires──> [settings.aiModel]           (already exists v1.1)
+                    ├──reads──>    [conversations store in IndexedDB]
+                    │                  └──requires──> [DB schema v3 migration]
+                    │                                     └──requires──> [DB version bump in background.js]
+                    │
+                    ├──sends──>    [User message + full thread to background]
+                    │                  └──background calls OpenRouter with messages[] array
+                    │                  └──returns complete AI response (non-streaming)
+                    │                  └──content script appends response to thread
+                    │                  └──auto-saves updated thread to IndexedDB
+                    │
+                    ├──pre-seeded by──> [v1.1 wrong-submission hint/solution output]
+                    │                       └──v1.1 panel writes first AI turn to conversations store
+                    │                       └──chat panel loads it as conversation[0] on open
+                    │
+                    └──history view──> [List of past conversations by titleSlug]
+                                           ├──reads──> [conversations store, all records]
+                                           ├──allows──> [open/resume past conversation]
+                                           └──allows──> [delete individual conversation]
 ```
 
 ### Dependency Notes
 
-- **API key must exist before any call:** The popup must check `chrome.storage.local` for the key before showing Hint/Solution buttons, or check at click time and show an inline error. Keys are already stored under `settings.openRouterApiKey` — the field name may need updating to `anthropicApiKey` since the project now targets Claude directly, not OpenRouter.
-- **API call should run in service worker, not content script:** Content scripts CAN call external APIs in MV3 (no policy restriction), but running the API call in the background service worker keeps the raw API key off the page context (isolated from LeetCode's JavaScript). The content script sends a message with the submission data; the background fetches and returns the response.
-- **Streaming requires port, not sendMessage:** If streaming is added, the architecture must use `chrome.runtime.connect()`. This is a deliberate architectural choice, not an optimization — `sendMessage` is not suitable for high-frequency chunk relay.
-- **Enhanced context requires schema change:** `last_testcase`, `expected_output`, and `code_output` are available in the raw `/check/` response but currently discarded in `saveSubmission()`. They must either be stored in IndexedDB or included in the `SHOW_AI_FEEDBACK` message payload at capture time. The payload approach (pass-through without storage) is simpler and avoids a DB migration.
+- **DB schema v3 must land before any conversation feature:** The `conversations` store does not exist yet. A DB version bump with `onupgradeneeded` is the first implementation task. All other chat features depend on this.
+- **v1.1 panel integration is a soft dependency:** If the seed-from-hint feature is deferred, the chat panel still works fully as a standalone blank conversation. The seed is an enhancement, not a blocker.
+- **Background message handler extension:** `background.js` needs a new `CHAT_MESSAGE` handler that accepts `{ messages: [...], titleSlug, lang }` and calls `callOpenRouter` with the full messages array (not a single-shot prompt). The existing `callOpenRouter` function will need a refactor to support multi-turn `messages[]` vs the v1.1 single-turn prompt approach.
+- **History view location:** The history browser (listing past conversations) can live in either the popup (`popup.html`) or as a slide-in pane within the chat panel itself. The popup approach avoids content-script complexity; the in-panel approach keeps context local to the problem page. This is an open design decision that does not affect data storage.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.1)
+### Launch With (v1.2)
 
-Minimum viable product — what's needed to validate the concept.
+Minimum viable product — what's needed to validate the interactive chat concept.
 
-- [ ] Wrong submission popup shows "Hint" and "Full Solution" buttons — replace the plain `SHOW_TOAST` for wrong answers with a richer popup
-- [ ] Clicking either button sends submission data to background, calls Claude API (non-streaming), displays response in popup
-- [ ] Missing API key: inline error "Add your API key in Settings" — popup does not break
-- [ ] API errors (rate limit, network failure): human-readable error message in popup
-- [ ] Response rendered with minimal markdown (code blocks, bold) using inline regex renderer
-- [ ] Dismiss / close on button click or overlay click
+- [ ] Chat trigger button (fixed-position) on all `leetcode.com/problems/*` pages
+- [ ] Slide-in chat panel (Shadow DOM) with message thread, input field, send button
+- [ ] Per-problem conversation persisted to IndexedDB `conversations` store
+- [ ] Full conversation thread passed as `messages[]` to OpenRouter on each send (multi-turn context)
+- [ ] Loading state during API call; error state for missing key and API failures
+- [ ] Markdown rendering of AI responses (code blocks, bold, bullets — reuse v1.1 renderer)
+- [ ] New chat / clear conversation button (wipes in-memory thread; deletes from IndexedDB)
+- [ ] DB schema v3 migration that adds `conversations` store
 
-### Add After Validation (v1.x)
+### Add After Validation (v1.2.x)
 
-Features to add once non-streaming is confirmed working.
+Features to add once the core chat loop is confirmed working.
 
-- [ ] Pass `last_testcase` + `expected_output` + `code_output` in prompt — improves feedback quality significantly; requires adding these fields to the capture payload
-- [ ] Streaming response via long-lived port — improves perceived responsiveness; add after the non-streaming path is stable
-- [ ] Hint prompt refinement: explicit prohibition on algorithm name and code in hint mode — pure prompt tuning, zero code change
+- [ ] v1.1 hint/solution output seeded as first chat turn — improves continuity between panels
+- [ ] Conversation history browser — list past conversations, delete individual ones
+- [ ] Soft message limit per conversation (20 messages) with visible trim notice
+- [ ] "Thinking..." animated indicator vs static text (minor polish)
 
-### Future Consideration (v2+)
+### Future Consideration (v1.3+)
 
-Features to defer until the AI feedback UX is validated.
+Defer until chat is stable and used.
 
-- [ ] Follow-up chat / multi-turn conversation in popup
-- [ ] Cross-problem pattern analysis ("you consistently struggle with DP")
-- [ ] Language-aware prompt variations (different hints for Python vs Java verbosity)
+- [ ] Streaming responses via `chrome.runtime.connect` long-lived port
+- [ ] Cross-problem pattern insights ("you consistently struggle with sliding window")
+- [ ] Conversation export (text copy of thread)
 
 ---
 
@@ -148,16 +147,20 @@ Features to defer until the AI feedback UX is validated.
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Hint + Full Solution buttons replacing toast | HIGH | LOW | P1 |
-| Claude API call (non-streaming, background) | HIGH | LOW | P1 |
-| Missing API key error state | HIGH | LOW | P1 |
-| API error handling (rate limit, network) | HIGH | LOW | P1 |
-| Markdown rendering (code blocks, bold, bullets) | MEDIUM | LOW | P1 |
-| Distinct hint vs solution UX framing | MEDIUM | LOW | P1 |
-| Pass failing test case / expected output in prompt | HIGH | MEDIUM | P2 |
-| Streaming response via long-lived port | MEDIUM | HIGH | P2 |
-| Hint prompt that blocks algorithm name + code | MEDIUM | LOW | P2 |
-| Follow-up chat in popup | LOW | HIGH | P3 |
+| Persistent chat trigger button | HIGH | LOW | P1 |
+| Chat panel with message thread + input | HIGH | MEDIUM | P1 |
+| Multi-turn conversation (messages[] to OpenRouter) | HIGH | MEDIUM | P1 |
+| IndexedDB conversations store (schema v3) | HIGH | LOW | P1 |
+| Auto-save conversation on each message | HIGH | LOW | P1 |
+| Loading + error states | HIGH | LOW | P1 |
+| Markdown rendering (reuse v1.1) | MEDIUM | LOW | P1 |
+| New chat / clear button | MEDIUM | LOW | P1 |
+| Seed first turn from v1.1 hint output | HIGH | MEDIUM | P2 |
+| Conversation history browser (popup or in-panel) | MEDIUM | MEDIUM | P2 |
+| Delete individual conversation | MEDIUM | LOW | P2 |
+| Soft message limit with trim notice | LOW | LOW | P2 |
+| Streaming responses | MEDIUM | HIGH | P3 |
+| Cross-problem pattern analysis | LOW | HIGH | P3 |
 
 **Priority key:**
 - P1: Must have for launch
@@ -166,81 +169,45 @@ Features to defer until the AI feedback UX is validated.
 
 ---
 
-## API Context: What to Send to Claude
+## UX Pattern Reference
 
-**Minimum viable context (all available in current submission record):**
-- Problem title / slug
-- User's submitted code
-- Programming language
-- Status ("Wrong Answer", "Time Limit Exceeded", "Runtime Error")
+Drawn from production AI tools (ChatGPT, Claude.ai, Cursor, VS Code Copilot, Gemini Workspace side panel):
 
-**Enhanced context (requires adding fields to capture payload):**
-- `last_testcase` — the specific input that failed
-- `expected_output` — correct answer for that input
-- `code_output` — what the user's code actually produced
+**Panel layout (top to bottom):**
+1. Header: problem name + "New chat" button + close button
+2. Message thread: scrollable list, newest at bottom
+3. Input area: textarea (Enter = send, Shift+Enter = newline) + Send button
 
-Passing the failing test case is the single highest-value improvement to feedback quality. It converts abstract advice into concrete diagnosis.
+**Message display:**
+- User messages: right-aligned or "You:" labeled, plain text
+- AI messages: left-aligned or "AI:" labeled, markdown rendered
+- Loading: "Thinking..." with animated ellipsis, replaces send button during in-flight call
+- Error: inline red message in the thread, "Retry" action
 
-**Do not send:**
-- Full problem description — requires fragile LeetCode DOM scraping
-- All past submissions for this problem — not relevant to the immediate wrong answer
-- FSRS card state — not relevant to code correctness
+**Conversation history (if in popup):**
+- List sorted by last-active descending
+- Each row: problem title (from titleSlug) + last-message preview + date
+- Tap row: opens problem page and/or loads that conversation in panel
+- Trash icon per row: delete with confirmation
 
----
-
-## Streaming Architecture Detail (MV3-Specific)
-
-**HIGH confidence — verified against official Chrome docs and Anthropic streaming docs.**
-
-**Non-streaming (v1.1):**
-1. Content script sends `chrome.runtime.sendMessage({ type: 'GET_AI_FEEDBACK', payload: {...} })`
-2. Service worker does `fetch('https://api.anthropic.com/v1/messages', { stream: false })`
-3. Awaits full JSON response, returns text via `sendResponse`
-4. Content script renders complete response at once
-5. Service worker stays alive because `return true` signals async response to Chrome
-
-**Streaming (v1.x if added):**
-1. Content script opens port: `const port = chrome.runtime.connect({ name: 'ai-stream' })`
-2. Service worker's `chrome.runtime.onConnect` handler receives port, starts streaming fetch
-3. Each SSE `content_block_delta` event sends `port.postMessage({ chunk: text })`
-4. Content script receives chunks and appends to the response area in real time
-5. Service worker sends `port.postMessage({ done: true })` on `message_stop` event
-6. Port connection keeps service worker alive throughout the stream — no keepalive hack needed
-
-The Claude Streaming API emits `content_block_delta` events with `{ type: "text_delta", text: "..." }`. Parse by reading the `data:` line of each SSE event, JSON.parse it, check `type === 'content_block_delta'` and `delta.type === 'text_delta'`, then use `delta.text`.
-
----
-
-## Markdown Rendering Approach
-
-**MEDIUM confidence — based on Shadow DOM constraints and Claude's output patterns.**
-
-Claude's code feedback reliably uses:
-- Triple-backtick code blocks (``` language ... ```)
-- Inline backticks for identifiers
-- `**bold**` for emphasis
-- `- bullet` lists
-
-**Option A — Inline regex renderer (~50 lines, recommended for v1.1):**
-Handles the four patterns above. Zero bundle size. Works inside Shadow DOM without CSP issues. No new dependency.
-
-**Option B — marked.js bundled UMD (~35KB minified):**
-Full CommonMark support. Must be bundled (no CDN in MV3 CSP). Overhead is justified only if rendering complex docs.
-
-**Recommendation:** Build a minimal inline renderer first. If it proves insufficient (nested lists, tables, complex code blocks), swap in marked.js. The switch is a one-file change.
+**New chat behavior:**
+- Clears in-memory thread
+- Does NOT auto-delete the persisted history (user must explicitly delete from history view)
+- This matches ChatGPT: starting a new chat archives the old one
 
 ---
 
 ## Sources
 
-- [Claude API Streaming Docs](https://platform.claude.com/docs/en/build-with-claude/streaming) — SSE event format, `content_block_delta` structure (HIGH confidence — official Anthropic docs)
-- [Chrome Extension MV3 Service Worker Lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) — termination constraints, port-based keepalive (HIGH confidence — official Chrome docs)
-- [MV3 Service Worker Keepalive via Port](https://gist.github.com/sunnyguan/f94058f66fab89e59e75b1ac1bf1a06e) — community-verified port connection pattern (MEDIUM confidence)
-- [Best AI Tools for LeetCode 2025](https://leetcopilot.dev/blog/best-ai-tools-for-leetcode-2025) — UX patterns for hint vs solution in the space (MEDIUM confidence)
-- [How AI Chatbots Help Without Giving Answers](https://dev.to/pratikshya_behera_/how-ai-chatbots-helped-me-improve-at-leetcode-without-giving-me-the-answers-4cn2) — user expectations for progressive hints (MEDIUM confidence)
-- LeetReminder codebase: `background.js`, `content-toast.js`, `popup.js`, `manifest.json` — existing infrastructure and constraints (HIGH confidence — direct code inspection)
+- [Gemini Workspace Conversation History in Side Panel](https://workspaceupdates.googleblog.com/2026/02/gemini-conversation-history-is-coming-to-side-panel-in-google-workspace.html) — production side-panel chat pattern (HIGH confidence — official Google announcement)
+- [PatternFly Chatbot Conversation History](https://www.patternfly.org/patternfly-ai/chatbot/chatbot-conversation-history/) — component-level UX for history drawer, search, new chat, grouped by date (HIGH confidence — design system documentation)
+- [AI Chat UI Best Practices — DEV Community](https://dev.to/greedy_reader/ai-chat-ui-best-practices-designing-better-llm-interfaces-18jj) — message rendering, streaming indicators, error states (MEDIUM confidence — community article)
+- [Chrome Extension Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) — Chrome MV3 native side panel (HIGH confidence — official Chrome docs)
+- [Cursor Forum: Toggle chat panel button](https://forum.cursor.com/t/guys-stop-messing-around-the-ui-toggle-chat-panel-button-is-needed/154636) — real-world user expectation for persistent toggle (MEDIUM confidence — community forum)
+- [Where should AI sit in your UI? — UX Collective](https://uxdesign.cc/where-should-ai-sit-in-your-ui-1710a258390e) — AI panel placement patterns, left/right anchoring, F-scan alignment (MEDIUM confidence — UX article)
+- LeetReminder codebase: `background.js`, `content-toast.js`, `manifest.json`, `content-isolated.js` — existing infrastructure and constraints (HIGH confidence — direct code inspection)
 
 ---
 
-*Feature research for: AI code feedback — LeetReminder v1.1 milestone*
-*Researched: 2026-03-13*
+*Feature research for: Interactive AI chat + conversation history — LeetReminder v1.2 milestone*
+*Researched: 2026-03-15*

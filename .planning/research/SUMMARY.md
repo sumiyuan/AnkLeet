@@ -1,17 +1,17 @@
 # Project Research Summary
 
-**Project:** LeetReminder — LeetCode FSRS Tracker with AI Feedback
-**Domain:** Chrome Extension (MV3) with third-party site integration, local-only storage, spaced repetition
-**Researched:** 2026-03-12
-**Confidence:** MEDIUM-HIGH
+**Project:** LeetReminder v1.2 — Interactive AI Chat
+**Domain:** Chrome Extension MV3 — Persistent AI chat panel with per-problem conversation history
+**Researched:** 2026-03-15
+**Confidence:** HIGH
 
 ## Executive Summary
 
-LeetReminder is a Chrome extension that automatically captures LeetCode submissions (both accepted and wrong answers), schedules reviews using the FSRS spaced repetition algorithm, and optionally provides AI-generated hints on incorrect attempts. Every comparable tool in the market either uses fixed-interval scheduling, captures only accepted answers, or requires manual logging — this product's differentiation is fully automatic capture plus adaptive FSRS scheduling plus AI feedback, all with zero backend infrastructure. The recommended approach is WXT (the 2025 consensus Chrome extension framework built on Vite) with React 19, TypeScript, ts-fsrs, Dexie.js for IndexedDB, and the @openrouter/sdk for AI — a well-validated stack with multiple community templates confirming it works together.
+LeetReminder v1.2 adds an interactive AI chat panel to an already-shipped Chrome MV3 extension. The core challenge is not building a chat application from scratch — it is integrating a persistent, stateful UI component into a constrained environment (MV3 service workers, ISOLATED content scripts, an existing IndexedDB schema, and a React SPA host page) without introducing new libraries or permissions. Research confirms the entire feature can be delivered by extending patterns already proven in v1.1: Shadow DOM content script panels, the existing `callOpenRouter` fetch path, and `onupgradeneeded` IndexedDB migrations. Every new capability maps directly to an established pattern in the codebase.
 
-The single highest-risk technical element is submission capture. LeetCode is a React SPA with a strict Content Security Policy that blocks inline script injection. The only reliable, stable approach is to inject a file-based script into the MAIN world (page context) that overrides `window.fetch` before LeetCode's JavaScript loads, then relay captured submission data through `window.postMessage` to the isolated content script, then via `chrome.runtime.sendMessage` to the service worker. DOM selector approaches (grabbing the "Accepted" banner text) will break on every LeetCode UI update and must never be used. This network interception architecture, combined with proper MV3 service worker patterns (no global state, `chrome.alarms` instead of `setTimeout`, synchronous top-level listener registration), are the foundation everything else depends on.
+The recommended approach is additive rather than architectural: a new `content-chat.js` content script for the persistent chat button and panel, an IndexedDB version bump from v2 to v3 adding a `conversations` store, new message handlers in `background.js` for chat CRUD, and a minor modification to `GET_AI_FEEDBACK` to write hint/solution exchanges into the conversation record. No new npm packages, no new permissions, no build step changes. The OpenRouter API already accepts a `messages[]` array for multi-turn context — extending the existing single-turn call to multi-turn is a surgical change.
 
-Key risks beyond submission capture are FSRS card date serialization (JavaScript `Date` objects must be explicitly serialized to ISO strings and deserialized back, or interval calculations silently return `NaN`), storage quota management (chrome.storage.local has a 10 MB cap that full code storage will eventually hit), and service worker state loss (all state must live in storage, not global variables, because the service worker terminates after 30 seconds of inactivity). These risks have clear, established mitigations — they are well-documented traps, not unknown unknowns.
+The top risks are MV3-specific: service worker termination during an in-flight API call, unbounded conversation history overflowing model context windows, IndexedDB schema migration blocking when multiple tabs are open, and the chat button disappearing on LeetCode's SPA navigation. All four have well-documented prevention strategies that must be implemented from the first working version — they cannot be bolted on later without rework.
 
 ---
 
@@ -19,161 +19,134 @@ Key risks beyond submission capture are FSRS card date serialization (JavaScript
 
 ### Recommended Stack
 
-WXT 0.20.18 is the unambiguous choice for Chrome extension scaffolding in 2025. It is Vite-powered with first-class React support, built-in type-safe storage wrappers, auto-imports, HMR for service workers and content scripts, and native support for `world: 'MAIN'` content scripts — which is required for the submission capture architecture. Plasmo is in maintenance mode and must not be used. CRXJS lacks built-in storage and messaging APIs.
-
-For spaced repetition, ts-fsrs 5.2.3 is the official TypeScript implementation from the open-spaced-repetition org, ESM-only, browser-compatible, and actively maintained. fsrs.js (the predecessor) was deprecated by the same org. For AI, the @openrouter/sdk 0.9.11 provides a type-safe client for 300+ models behind a single BYOK integration; raw fetch to OpenRouter's endpoint is a valid fallback if the SDK has MV3 CSP issues.
+No new libraries are required. v1.2 builds entirely on primitives already in the codebase. The chat panel UI follows the exact same Shadow DOM injection pattern as the existing wrong-submission panel in `content-toast.js`. Multi-turn AI uses the existing OpenRouter `fetch` call extended to accept a `messages[]` array. Conversation persistence uses the existing `onupgradeneeded` migration pattern to add a new `conversations` store at IndexedDB version 3.
 
 **Core technologies:**
-- WXT 0.20.18: Chrome extension framework — Vite-based, active in 2025, first-class React + Tailwind, handles MV3 manifest and multi-entrypoint bundling
-- TypeScript 5.x: Type safety — mandatory for ts-fsrs and @openrouter/sdk; catches card state bugs at compile time
-- React 19 + Tailwind CSS 4: Popup/dashboard UI — WXT has first-class module support; must configure rem→px to avoid host-page font-size leakage
-- ts-fsrs 5.2.3: FSRS algorithm — official TypeScript implementation, stateless API, browser-compatible ESM
-- @openrouter/sdk 0.9.11: AI integration — unified access to GPT-4/Claude/Gemini via user's own API key; pin exact version (beta)
-- Dexie.js 4.0: IndexedDB wrapper — for submission history (unbounded growth); chrome.storage.local for settings/FSRS card state (fast, reactive, 10 MB cap)
-- shadcn/ui: UI component primitives — copy-paste components (not a dependency), Tailwind 4 compatible
+- Content-script Shadow DOM panel (`content-chat.js`, new file) — persistent chat button and slide-in panel — same proven pattern as wrong-submission panel; avoids `chrome.sidePanel` API which cannot open programmatically from content scripts as of late 2024
+- IndexedDB `conversations` store (v3 migration) — one document per problem (`titleSlug` keyPath), embedded `messages[]` array — simpler than a separate messages store at chat conversation scale (5–30 messages); single `onupgradeneeded` branch identical to the v1→v2 migration
+- OpenRouter `/chat/completions` with `messages[]` array — existing endpoint, existing `callOpenRouter` function extended to pass accumulated history; no streaming required (1–3s responses are acceptable for non-streaming)
+- `chrome.runtime.sendMessage` — existing messaging infrastructure; background service worker owns all DB access and AI calls; content scripts never touch IndexedDB directly
+- `chrome.storage.local.get('_ping')` keepalive at 20s interval — already proven in v1.1; must be carried into the new `CHAT_SEND_MESSAGE` handler
 
 ### Expected Features
 
-The core value chain is: automatic capture → local history → FSRS scheduling → review queue → self-assessment rating → updated FSRS interval. Every link in this chain is a P1 dependency; removing any one breaks the product entirely. AI feedback is a high-value differentiator but is genuinely optional — it depends only on an API key being configured.
+**Must have (table stakes) — v1.2 launch:**
+- Persistent chat trigger button on all `leetcode.com/problems/*` pages
+- Toggle open/close for the chat panel (default closed)
+- Message input (Enter = send, Shift+Enter = newline) with send button
+- User message and AI response rendering with markdown (reuse v1.1 renderer)
+- Loading indicator and inline error states (missing key, API failure)
+- Per-session conversation continuity via `messages[]` array passed to OpenRouter
+- New chat / clear conversation button
+- IndexedDB `conversations` store with auto-save on every message pair
+- DB schema v3 migration
 
-**Must have (table stakes):**
-- Automatic submission capture (accepted AND wrong answers) — root dependency for everything; no existing tool captures wrong answers automatically
-- Local problem history (title, difficulty, result, timestamp, code) — foundation for all scheduling and display
-- FSRS scheduling via ts-fsrs — the core differentiator vs. fixed-interval competitors
-- Due today review queue in popup — the daily action surface users open the extension for
-- Self-assessment rating UI (Again / Hard / Good / Easy) — required by FSRS `repeat()` to compute next interval
-- Link from review queue to LeetCode problem page — reviews happen on LeetCode; this is the "go solve it" button
-- Browser notifications when reviews are due (chrome.alarms + chrome.notifications) — without this, the extension is invisible on non-active days
-- Settings page with OpenRouter API key input — even if AI is optional in v1, collecting the key now avoids migration pain
+**Should have (competitive differentiators) — v1.2.x post-validation:**
+- Per-problem conversation history persisted across sessions (survives page reload/browser restart)
+- Conversation history browser in popup (list by problem, delete individual conversations)
+- v1.1 hint/solution output seeded as first chat turn for continuity
+- Soft message limit per conversation (20 messages) with visible trim notice
 
-**Should have (competitive):**
-- AI feedback on wrong submissions (hint mode + full explanation mode) — the feature no competitor has; turns failures into learning moments
-- Daily activity view — motivating once there's enough history (~1 week of use)
-- Data export/import (JSON) — local-only storage makes this essential for trust; add once users have data worth protecting
-- First-attempt vs multi-attempt signal feeding FSRS — low effort, improves scheduling quality
+**Defer (v1.3+):**
+- Streaming responses via `chrome.runtime.connect` long-lived ports
+- Cross-problem pattern insights
+- Conversation export
 
-**Defer (v2+):**
-- Multiple LLM model selector — add after AI feature is validated
-- Pattern/category-based review grouping — meaningful only at 50+ problems
-- Mastery threshold / auto-archive — FSRS supports this via retrievability score; adds complexity
-- Full submission code diff view (old vs new code)
-
-**Anti-features to avoid:** In-extension code editor (defeats the purpose — reviews belong on LeetCode), cloud sync (requires backend, kills zero-infrastructure design), streak tracking (LeetCode already does this), storing full problem descriptions (copyright risk + storage bloat).
+**Confirmed anti-features (do not build):**
+- Auto-open chat on wrong submission — conflicts with wrong-submission panel, interrupts focus at the wrong moment
+- Device sync — requires backend infrastructure, out of scope
+- LeetCode DOM scraping for problem context — fragile, breaks silently; use `titleSlug` + language instead
 
 ### Architecture Approach
 
-The system has four distinct execution contexts that cannot share memory and must communicate through defined channels: the MAIN world injected script (page context, no Chrome APIs), the isolated content script (can call Chrome APIs, cannot touch page's `window`), the background service worker (event-driven, terminates after 30s idle, all state in storage), and the popup React SPA (standard web app that queries the service worker for data). The storage layer is split: `chrome.storage.local` for settings and reactive small data (10 MB cap), Dexie.js/IndexedDB for all submission history and FSRS card state (no practical size limit). The service worker is the single writer for IndexedDB; the popup reads through service worker messages.
+The architecture follows the service worker hub pattern established in v1.0: `background.js` owns all data (IndexedDB) and all AI calls (OpenRouter), while content scripts own only rendering state. `content-chat.js` is a new ISOLATED world content script that manages the persistent chat button and Shadow DOM panel. It communicates exclusively with `background.js` via `chrome.runtime.sendMessage`. The background pushes hint/solution exchanges into the open chat panel via `chrome.tabs.sendMessage` (fire-and-forget `CHAT_APPEND`). `content-toast.js` does not need to know about `content-chat.js` — integration routes through the background, keeping the two content scripts fully decoupled.
 
 **Major components:**
-1. Injected script (MAIN world, `injected.ts`) — overrides `window.fetch`/`XHR`, intercepts LeetCode `/check/` API responses, dispatches `CustomEvent` to content script
-2. Content script (ISOLATED world, `content/index.ts`) — listens for `CustomEvent` from injected script, forwards to service worker via `chrome.runtime.sendMessage`
-3. Background service worker (`background/index.ts`) — central coordinator: processes submissions, runs FSRS via ts-fsrs, manages alarms, calls OpenRouter API, fires notifications, responds to popup queries
-4. Popup React SPA — dashboard showing due reviews, daily stats, history, and settings; communicates with service worker for all data
-5. Storage layer — `chrome.storage.local` (settings, API key, counters) + Dexie.js IndexedDB (submissions, FSRS card state, review history)
-
-Build order is dictated by dependency: shared types → IndexedDB schema → content script/injected script → submission handler + FSRS engine → alarm/notification handler → popup UI → AI handler.
+1. `content-chat.js` (NEW) — persistent chat button, Shadow DOM side panel, renders conversation, sends/receives messages via background
+2. `background.js` (MODIFIED) — IDB v3 migration, `CHAT_SEND_MESSAGE` / `CHAT_LOAD_CONVERSATION` / `CHAT_CLEAR_CONVERSATION` handlers, modified `GET_AI_FEEDBACK` to write exchange to `conversations` store and fire `CHAT_APPEND`
+3. `conversations` IndexedDB store (NEW) — keyPath `titleSlug`, embedded `messages[]` array, `updatedAt` index for history sort
+4. `popup.js` / `popup.html` (MODIFIED) — new "Chats" tab for conversation history browse and delete
 
 ### Critical Pitfalls
 
-1. **DOM selector-based submission detection** — LeetCode's React SPA refactors class names regularly; DOM selectors break silently. Use MAIN world network interception of `/check/` responses only. Never use `document.querySelector` for submission results.
+1. **Service worker killed mid-conversation turn** — wrap every `CHAT_SEND_MESSAGE` handler in a `setInterval(() => chrome.storage.local.get('_ping'), 20_000)` keepalive; write user message and AI reply to IndexedDB in a single transaction only after the response succeeds (no phantom pending messages if the worker dies mid-call)
 
-2. **Inline script injection blocked by LeetCode's CSP** — `document.createElement('script'); script.textContent = "..."` is blocked by LeetCode's CSP. Declare the interceptor as a separate file and inject it via `world: "MAIN"` in the manifest content scripts declaration. File-based injection from the extension origin passes CSP.
+2. **Unbounded conversation history overflows model context window** — cap the messages array sent to OpenRouter to the last 10 messages before every API call; store the full history in IDB regardless; this must be in place from the first working implementation, not added as a patch
 
-3. **Service worker state loss** — MV3 service workers terminate after 30s idle. Global variables reset on restart. Use `chrome.storage.local` as sole source of truth. Register all listeners synchronously at the top level (never inside async functions). Use `chrome.alarms` instead of `setTimeout`.
+3. **IndexedDB v2→v3 migration blocked by open tabs** — preserve the existing `db.onversionchange = () => db.close()` pattern; ensure any new code that opens the DB sets this handler; test with two LeetCode tabs open during extension reload
 
-4. **FSRS card date serialization corruption** — `Date` objects serialize to ISO strings in JSON; ts-fsrs receives strings instead of `Date` objects and silently returns `NaN` intervals. Write explicit serialize/deserialize helpers; test by storing a card, reading it back, running `repeat()`, and verifying the returned interval is a real number.
+4. **Chat button disappears on LeetCode SPA navigation** — add `popstate` listener with re-mount logic and a double-injection guard; use 300ms delay or MutationObserver on the problem title element for reliable re-mount timing
 
-5. **FSRS card mutation instead of saving returned state** — `fsrs.repeat()` is stateless; it returns a new card object, it does not mutate the input. Always save `result[rating].card` to storage. Never do `card.due = newDate` after calling `repeat()`.
-
-6. **chrome.storage.local quota exceeded silently** — 10 MB limit will be hit after months of full-code-per-submission storage. Always handle `.catch()` on storage writes. Store full code in IndexedDB, cap retention per problem. Monitor with `getBytesInUse()`.
+5. **`sendMessage` fails if service worker not yet active** — wrap all `sendMessage` calls from `content-chat.js` in the existing retry helper pattern (600ms delay, one retry attempt); the service worker wakes up quickly once poked
 
 ---
 
 ## Implications for Roadmap
 
-Based on the dependency chain in FEATURES.md and the build order in ARCHITECTURE.md, the natural phase structure emerges from what must be true before anything else can work.
+Based on research, the architecture document's 5-phase build order is the correct sequence. Dependencies flow strictly from data layer up to UI — no phase can be started until its prerequisite is complete.
 
-### Phase 1: Foundation and Submission Capture
+### Phase 1: Storage and Service Worker Foundation
 
-**Rationale:** Submission capture is the root dependency of the entire feature tree. Without it, there is no data, no scheduling, no history, no AI — nothing. The architecture setup decisions (storage split, message type schema, MV3 listener patterns) made here propagate to every subsequent phase. The highest-risk pitfalls (DOM selectors, CSP injection, service worker state loss, storage quota) all require correct decisions at this phase.
+**Rationale:** All chat features depend on the `conversations` IndexedDB store existing and the background chat handlers being present. This must ship before any UI work. Multiple critical pitfalls (service worker termination, token overflow, DB migration blocking, schema version mismatch) must be addressed here before UI complexity is added.
 
-**Delivers:** Working Chrome extension that detects LeetCode submissions (accepted + wrong), stores them locally in IndexedDB, captures problem title/difficulty/result/timestamp/code.
+**Delivers:** IDB v3 migration with `conversations` store; `CHAT_SEND_MESSAGE`, `CHAT_LOAD_CONVERSATION`, `CHAT_CLEAR_CONVERSATION` handlers in `background.js`; `callOpenRouter` refactored to accept a `messages[]` array; modified `GET_AI_FEEDBACK` that writes hint exchange to `conversations` and fires `CHAT_APPEND`
 
-**Addresses features:** Automatic submission capture, local problem history, problem metadata.
+**Addresses:** DB schema v3 migration (P1), multi-turn conversation context (P1)
 
-**Avoids:** DOM selector fragility (use network interception), CSP injection errors (use `world: "MAIN"` file-based injection), service worker state loss (establish storage-as-source-of-truth pattern from day one), storage quota (design schema with IndexedDB for submissions, chrome.storage.local for settings only).
+**Avoids:** Service worker killed mid-turn (keepalive in handler), token overflow (cap at last 10 messages before API call), DB migration blocking (preserve `onversionchange` handler), phantom pending messages (single-transaction write on success only), schema version mismatch (centralize `DB_VERSION = 3` constant; background owns all DB access)
 
-### Phase 2: FSRS Scheduling Engine
+### Phase 2: Chat Panel UI
 
-**Rationale:** Scheduling is the core differentiator and the second link in the dependency chain. The ts-fsrs API is stateless and well-documented, but its date serialization and immutable card update requirements are exact failure modes identified in research. Build this correctly once with tests before connecting it to the UI.
+**Rationale:** UI depends on the backend handlers from Phase 1. The Shadow DOM panel, SPA re-mount logic, theme detection, and `sendMessage` retry wrapper must all be in place before integration testing is possible.
 
-**Delivers:** FSRS card creation for each new problem, interval calculation on submission, card state persistence in IndexedDB with proper serialization, due-date query capability.
+**Delivers:** `content-chat.js` — persistent chat button (fixed position), Shadow DOM slide-in panel, message thread rendering with markdown, loading/error states, `CHAT_APPEND` listener; `manifest.json` updated with new content script entry
 
-**Uses:** ts-fsrs 5.2.3, Dexie.js IndexedDB, `background/fsrs/engine.ts` + `background/storage/cards.ts`.
+**Uses:** Shadow DOM pattern from `content-toast.js`, markdown renderer from v1.1 (reuse, do not duplicate), `sendMessage` retry pattern from `content-isolated.js`
 
-**Avoids:** Date serialization corruption (explicit `new Date()` deserialization), card mutation (save `result[rating].card` not the original), reading all cards on startup (index on `nextDueDate` from the beginning).
+**Avoids:** SPA navigation button loss (popstate listener + re-mount guard), service worker wake-up failure (retry wrapper), dark/light theme breakage (detect LeetCode `dark` class on `<html>` and pass as `data-theme` attribute to Shadow DOM host)
 
-**Implements:** FSRS engine + scheduler components from the architecture.
+### Phase 3: Wrong Submission Integration
 
-### Phase 3: Review Queue and Notifications
+**Rationale:** Soft dependency — the chat panel works standalone without this. But seeding the first chat turn from the v1.1 hint output is a key differentiator and is architecturally trivial once Phase 1 is complete (the background already fires `CHAT_APPEND` after `GET_AI_FEEDBACK`). Verifying the end-to-end flow is a critical integration test.
 
-**Rationale:** The review queue is the daily action surface — the reason a user opens the extension. Notifications make the tool work on days users don't actively think about it. Both depend on the FSRS scheduling engine from Phase 2 being operational.
+**Delivers:** Verified integration path — wrong submission hint appears as first message in chat panel when panel is opened after getting a hint; `content-toast.js` requires no changes (background handles it automatically)
 
-**Delivers:** Popup dashboard with "Due Today" queue, self-assessment rating UI (Again/Hard/Good/Easy), links to LeetCode problem pages for review, chrome.alarms-based notifications when reviews are due.
+**Avoids:** Schema mismatch (background-only DB writes established in Phase 1 ensure no content script opens IndexedDB directly)
 
-**Addresses features:** Due today review queue, self-assessment rating, link to LeetCode problem, browser notifications.
+### Phase 4: Conversation History in Popup
 
-**Avoids:** `setTimeout` for alarms (use `chrome.alarms`), async listener registration (top-level synchronous registration), notification click handler must open popup or review URL (not silently do nothing).
+**Rationale:** History browsing is a differentiating P2 feature. It reuses the `conversations` store from Phase 1 and adds only popup UI. Must be designed with lazy loading from the start to avoid the history-view performance trap at 50+ problems.
 
-### Phase 4: Popup Dashboard and Settings
+**Delivers:** New "Chats" tab in `popup.html` — list of conversations sorted by `updatedAt` descending, per-problem delete with confirmation dialog, lazy message loading (load problem list first; load messages only when a conversation is selected)
 
-**Rationale:** With the data pipeline and scheduling working, the popup UI can be built as a React SPA that queries the service worker for data. Settings management (OpenRouter API key input) is included here because it gates Phase 5, and establishing the key storage pattern before the key is ever written is safer than retrofitting it.
+**Avoids:** History view performance degradation (metadata-first query; never load all messages on popup open)
 
-**Delivers:** Full popup UI with Dashboard (daily stats, due count), Reviews page, History page with submission list, Settings page with API key input and notification preferences.
+### Phase 5: Polish and Limits
 
-**Uses:** React 19, Tailwind CSS 4, shadcn/ui components, `popup/hooks/useStorage.ts` and `useMessages.ts`.
+**Rationale:** UX completeness before any external distribution. Addresses UX pitfalls that won't be caught in functional testing but will generate immediate user complaints.
 
-**Avoids:** Slow popup open (skeleton/loading state immediately, load data async), missing "tracking active" indicator (show badge on extension icon when on LeetCode), API key stored under obvious plain key with no UX explanation.
+**Delivers:** Soft message limit (20 messages per conversation) with trim notice; session separator markers in conversation thread so users understand what AI does and does not remember; panel/wrong-submission mutual exclusion (opening one closes the other); scroll-to-bottom behavior on new message append; delete confirmation dialog
 
-### Phase 5: AI Feedback Integration
-
-**Rationale:** AI feedback is the highest-value differentiator but depends on everything before it — submission capture (to have wrong answers), history storage (to have submission code as context), and settings (to have the API key). It is isolated in its own phase because it has a hard external API dependency (OpenRouter) and unique security requirements.
-
-**Delivers:** "Get Feedback" button on wrong submissions, hint mode and full explanation mode, AI call from background service worker (never from content script), graceful degradation when no API key is set.
-
-**Uses:** @openrouter/sdk 0.9.11 (or raw fetch fallback), OpenRouter BYOK model, `background/handlers/ai.ts`.
-
-**Avoids:** Calling OpenRouter from the content script (API key exposure), logging the API key, crashing when API key is not set (hide the button instead), using LangChain or other heavy SDKs.
-
-### Phase 6: Quality of Life and Data Management
-
-**Rationale:** These features add meaningful polish and trust but have no hard dependencies on each other. They are safe to defer until the core product is validated.
-
-**Delivers:** Daily activity view, JSON data export/import, first-attempt vs multi-attempt FSRS signal, storage usage monitoring with user-facing warning.
-
-**Addresses features:** Daily activity view, data export/import, first-attempt tracking.
-
----
+**Avoids:** All remaining UX pitfalls — confused session semantics, overlapping panels, accidental conversation delete
 
 ### Phase Ordering Rationale
 
-- Phases 1-3 are strictly sequenced by the dependency chain: capture → schedule → surface. You cannot skip any step.
-- Phase 4 (popup UI) could theoretically start in parallel with Phase 2 using mock data, but completing Phase 2 first prevents building UI against an untested data model.
-- Phase 5 (AI) is intentionally last among core features: it has the most external dependencies (API key, OpenRouter service), the most security surface area, and the least impact on core functionality if deferred.
-- Phase 6 is genuinely additive — none of Phase 6 is required for the product to deliver its core value proposition.
+- Storage must come before UI: the `conversations` store must exist before any content script tries to load or save conversations
+- Service worker handlers must come before content script UI: `CHAT_SEND_MESSAGE` must work end-to-end before the panel sends its first real message
+- Wrong submission integration comes after the chat panel is working: it is the integration of two complete subsystems, not a foundational dependency
+- History view comes after the core chat loop is validated: it needs real conversation data in IDB to test meaningfully
+- Polish phase last: UX details that do not affect core functionality but must be in place before store submission
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
+Phases with standard patterns (no research-phase needed):
+- **Phase 1:** IndexedDB migration and OpenRouter messages-array extension are well-documented patterns already used in this codebase; all new handlers follow the existing `background.js` message handler structure
+- **Phase 2:** Shadow DOM injection follows the exact same pattern as `content-toast.js`; SPA re-mount pattern is documented with official Chrome content script lifecycle docs
+- **Phase 3:** No new patterns — fully handled by the `GET_AI_FEEDBACK` modification designed in Phase 1
+- **Phase 4:** Standard popup tab addition using existing popup infrastructure; lazy loading is a standard IndexedDB cursor pattern
+- **Phase 5:** Pure UX polish; no novel patterns or external integrations
 
-- **Phase 1 (Submission Capture):** LeetCode's GraphQL endpoint structure and `operationName` values for submission polling are not publicly documented. Will need to intercept and inspect real traffic to identify the exact endpoint patterns before building the interceptor. The `/submissions/detail/{id}/check/` REST pattern is confirmed by community sources (MEDIUM confidence), but GraphQL is the newer path — verify which LeetCode currently uses.
-- **Phase 5 (AI Feedback):** @openrouter/sdk is in beta (0.9.11 pinned); verify it has no MV3 service worker compatibility issues (ESM imports, CSP headers) before building against it. The fallback to raw fetch is documented if issues arise.
-
-Phases with standard patterns (skip research-phase):
-
-- **Phase 2 (FSRS Scheduling):** ts-fsrs is thoroughly documented with official examples. The API is stable and the pitfalls are well-characterized.
-- **Phase 3 (Alarms/Notifications):** chrome.alarms and chrome.notifications are official Chrome APIs with complete documentation. Patterns are established.
-- **Phase 4 (Popup UI):** Standard React SPA patterns apply. WXT + React + Tailwind + shadcn has confirmed community templates.
+No phases require `/gsd:research-phase` during planning. All required patterns are either already proven in the codebase or verified against official Chrome/MDN documentation.
 
 ---
 
@@ -181,50 +154,48 @@ Phases with standard patterns (skip research-phase):
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Core choices (WXT, ts-fsrs, React, Tailwind) verified via official repos and community templates. @openrouter/sdk pinned at beta version — minor uncertainty. |
-| Features | MEDIUM | Competitor landscape verified against live products and community threads. LeetCode-specific behavior (what users actually want vs fixed-interval tools) is community-validated but not user-tested. |
-| Architecture | HIGH | Based primarily on official Chrome Developer documentation. MAIN world injection pattern confirmed by multiple community implementations of LeetCode-adjacent extensions. |
-| Pitfalls | MEDIUM-HIGH | Critical pitfalls (CSP, service worker state, FSRS API) cross-referenced from official docs + practitioner accounts. LeetCode-specific API stability is MEDIUM — LeetCode does not publish a public API contract. |
+| Stack | HIGH | All claims verified against official Chrome docs, MDN, and OpenRouter API docs; no new libraries required; `chrome.sidePanel` limitation confirmed by official docs and multiple community reports |
+| Features | HIGH | UX patterns drawn from production AI tools (ChatGPT, Cursor, Gemini Workspace side panel); Chrome extension constraints verified against official documentation; existing codebase constraints confirmed by direct code reading |
+| Architecture | HIGH | Based on direct reading of the existing codebase; all new components follow already-established patterns; component boundaries and message types fully specified |
+| Pitfalls | HIGH | Critical pitfalls verified against official Chrome documentation and real Chromium issue threads; MV3 service worker termination behavior confirmed in official blog posts |
 
-**Overall confidence:** MEDIUM-HIGH
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **LeetCode API endpoint verification:** The exact GraphQL `operationName` or REST endpoint path for submission polling needs to be confirmed by intercepting real LeetCode traffic during Phase 1. Do not hard-code an endpoint without live verification.
-- **@openrouter/sdk MV3 compatibility:** The SDK is ESM-only and in beta. Verify it can be imported in a MV3 service worker without CSP or module format issues before committing to it in Phase 5. The raw fetch fallback is ready if needed.
-- **Storage schema migration strategy:** The research recommends IndexedDB `onupgradeneeded` handlers from day one. Define an explicit versioning strategy in Phase 1 before any schema is committed, to avoid costly migrations after data is in users' browsers.
-- **Tailwind rem→px configuration:** Confirm the rem-to-px configuration works correctly in the WXT + Tailwind 4 setup to prevent popup font size being controlled by LeetCode's host page CSS (affects popup when opened on leetcode.com tab).
+- **History view location (popup "Chats" tab vs. in-panel slide-in pane):** Both approaches are architecturally sound. Research recommends the popup tab (reuses existing popup infrastructure, no added complexity in the content script). Final decision deferred to requirements — does not affect the data storage design.
+
+- **Session semantics ("new chat" behavior):** Architecture recommends a `role: 'system'` session separator message inserted into the `messages[]` array rather than separate IndexedDB records per session. This means "start fresh" clears the in-memory thread but appends a divider to the persisted record. The exact UX (what the divider looks like, whether AI context resets) needs a product decision before implementation.
+
+- **Soft message limit (20 per conversation):** Research recommends this as a storage guard, separate from the token cap (last 10 messages to OpenRouter). The token cap is a Phase 1 must-have. The storage limit is listed as a v1.2.x item. Clarify during task planning whether storage limit ships with v1.2 core or as a follow-on.
+
+- **LeetCode theme detection reliability:** `document.documentElement.classList.contains('dark')` is the recommended approach, but LeetCode's DOM is closed-source. Flag for smoke-testing on both themes before every release; add a fallback to `prefers-color-scheme` if the class is absent.
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [wxt-dev/wxt GitHub Releases](https://github.com/wxt-dev/wxt/releases) — WXT version and release date
-- [wxt.dev/guide/essentials/storage](https://wxt.dev/guide/essentials/storage.html) — WXT storage API
-- [open-spaced-repetition/ts-fsrs GitHub](https://github.com/open-spaced-repetition/ts-fsrs) — FSRS TypeScript implementation
-- [OpenRouterTeam/typescript-sdk GitHub](https://github.com/OpenRouterTeam/typescript-sdk) — OpenRouter SDK
-- [Chrome Extension Service Worker Lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) — MV3 patterns
-- [Content Scripts Documentation](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts) — isolated vs MAIN world
-- [chrome.storage API Reference](https://developer.chrome.com/docs/extensions/reference/api/storage) — quota limits
-- [chrome.alarms API Reference](https://developer.chrome.com/docs/extensions/reference/api/alarms) — alarm patterns
-- [Chrome Extension Message Passing](https://developer.chrome.com/docs/extensions/develop/concepts/messaging) — runtime messaging
-- [javydevx/leetcode-tracker GitHub](https://github.com/javydevx/leetcode-tracker) — closest open-source analog
+- [Chrome sidePanel API reference](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) — confirmed `sidePanel.open()` requires direct user gesture; cannot call from content script message handlers after late 2024
+- [Longer extension service worker lifetimes — Chrome blog](https://developer.chrome.com/blog/longer-esw-lifetimes) — confirmed `chrome.storage.local.get()` resets idle timer (Chrome 110+)
+- [OpenRouter Chat Completions API](https://openrouter.ai/docs/api/api-reference/chat/send-chat-completion-request) — confirmed OpenAI-compatible `messages[]` array format with `role`/`content` fields
+- [MDN — Using IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB) — `onupgradeneeded` migration pattern, `oldVersion` comparison, `onblocked` behavior
+- [Chrome extensions — Content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts) — ISOLATED world lifecycle, SPA navigation caveat, `document_end` injection timing
+- [Chrome Extension Service Worker Lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) — 30s idle termination confirmed; Chrome API call resets timer
+- [Chrome Extension Message Passing](https://developer.chrome.com/docs/extensions/develop/concepts/messaging) — `return true` for async handlers, `lastError` handling, `chrome.tabs.sendMessage` fire-and-forget pattern
+- [IDBOpenDBRequest: upgradeneeded event — MDN](https://developer.mozilla.org/en-US/docs/Web/API/IDBOpenDBRequest/upgradeneeded_event) — schema migration mechanics, `onblocked` behavior
+- LeetReminder codebase — `background.js`, `content-toast.js`, `manifest.json`, `content-isolated.js` — direct code inspection for existing patterns and constraints
 
 ### Secondary (MEDIUM confidence)
-- [2025 State of Browser Extension Frameworks](https://redreamality.com/blog/the-2025-state-of-browser-extension-frameworks-a-comparative-analysis-of-plasmo-wxt-and-crxjs/) — WXT vs Plasmo vs CRXJS comparison
-- [Building LeetHub Automated Sync Feature (Richard Fu, 2025)](https://www.richardfu.net/building-an-automated-leetcode-solution-post-sync-feature-for-leethub/) — LeetCode CSP bypass, MAIN world injection, GraphQL operationName interception
-- [Lanki HN thread](https://news.ycombinator.com/item?id=40173237) — user feature requests, competitor signal
-- [WXT + React + shadcn + Tailwind community template](https://github.com/imtiger/wxt-react-shadcn-tailwindcss-chrome-extension) — stack compatibility confirmation
-- [ts-fsrs DeepWiki](https://deepwiki.com/open-spaced-repetition/ts-fsrs) — date input handling, enable_short_term edge cases
-- [How to Secure API Keys in Chrome Extension](https://dev.to/notearthian/how-to-secure-api-keys-in-chrome-extension-3f19) — chrome.storage.session vs local
-- [Network Request Interception Patterns](https://rxliuli.com/blog/intercepting-network-requests-in-chrome-extensions/) — MAIN world fetch override technique
-- [LeetCopilot: Best LeetCode Chrome Extensions 2026](https://leetcopilot.dev/blog/best-leetcode-chrome-extensions-2025) — competitor feature survey
-
-### Tertiary (LOW confidence)
-- [Hacker News DSA spaced repetition CLI](https://news.ycombinator.com/item?id=45480280) — implementation patterns (minimal HN engagement)
+- [Chromium Extensions Group — `sidePanel.open()` breakage](https://groups.google.com/a/chromium.org/g/chromium-extensions/c/WRGFOAHxoaY) — multiple corroborating community reports of content-script sidePanel.open failure since late 2024
+- [MV3 ServiceWorker reliability — Chromium Extensions Group](https://groups.google.com/a/chromium.org/g/chromium-extensions/c/jpFZj1p7mJc) — real-world service worker termination failure reports
+- [Extension.Ninja — Message Port Closed Before Response](https://www.extension.ninja/blog/post/solved-message-port-closed-before-response-was-received/) — `lastError` handling pattern
+- [Gemini Workspace Conversation History in Side Panel](https://workspaceupdates.googleblog.com/2026/02/gemini-conversation-history-is-coming-to-side-panel-in-google-workspace.html) — production side-panel chat UX pattern reference
+- [PatternFly Chatbot Conversation History](https://www.patternfly.org/patternfly-ai/chatbot/chatbot-conversation-history/) — history drawer UX: search, new chat, grouped-by-date patterns
+- [AI Chat UI Best Practices — DEV Community](https://dev.to/greedy_reader/ai-chat-ui-best-practices-designing-better-llm-interfaces-18jj) — message rendering, loading states, error states
+- [Isolating Styles in Chrome Extensions with Shadow DOM — Sweets.chat](https://sweets.chat/blog/article/isolating-styles-in-chrome-extensions-with-shadow-dom) — `all: initial` pattern, event propagation across shadow boundary
 
 ---
 
-*Research completed: 2026-03-12*
+*Research completed: 2026-03-15*
 *Ready for roadmap: yes*
