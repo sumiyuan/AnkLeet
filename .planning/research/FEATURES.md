@@ -1,8 +1,41 @@
 # Feature Research
 
-**Domain:** Chrome extension — LeetCode problem tracking with FSRS spaced repetition + AI feedback
-**Researched:** 2026-03-12
-**Confidence:** MEDIUM (cross-referenced multiple tools, web search verified against official Chrome docs and live products)
+**Domain:** AI-powered code feedback on wrong LeetCode submissions (Chrome extension, MV3)
+**Researched:** 2026-03-13
+**Confidence:** HIGH (API patterns from official docs), MEDIUM (UX patterns from community/competitor data)
+
+> **Scope note:** This is v1.1 milestone research. The existing v1.0 features (submission capture,
+> FSRS queue, rating dialog, toast, badge, settings) are already built. This file covers only
+> the NEW AI feedback features being added.
+
+---
+
+## What the Existing Pipeline Already Provides
+
+The submission capture pipeline stores these fields — all available as context for AI calls:
+
+| Field | Source | Notes |
+|-------|--------|-------|
+| `titleSlug` | REST `/check/` | Problem identifier |
+| `title` | REST or GraphQL | Human-readable problem name |
+| `difficulty` | GraphQL path only | null on REST path |
+| `topicTags[]` | GraphQL path only | empty on REST path |
+| `code` | REST or GraphQL | User's submitted code |
+| `lang` / `langDisplay` | Both paths | Programming language |
+| `statusDisplay` | Both paths | "Wrong Answer", "Time Limit Exceeded", "Runtime Error" |
+| `runtime` / `memory` | REST path | Performance stats |
+
+**Not currently stored (in raw `/check/` response but discarded):**
+
+| Field | Available in raw response | Value for AI |
+|-------|--------------------------|--------------|
+| `last_testcase` | Yes (REST) | Specific failing input — makes feedback concrete |
+| `expected_output` | Yes (REST) | What the correct answer was |
+| `code_output` | Yes (REST) | What the user's code actually produced |
+
+These three fields transform generic feedback ("check your edge cases") into specific feedback ("your code returns `3` for input `[1,2,3]` but expected `6`"). They are HIGH value and require a minor schema addition.
+
+The wrong-submission path in `background.js` currently calls `notifyTab(tabId, { type: 'SHOW_TOAST' })`. The AI feedback feature replaces this with a richer payload.
 
 ---
 
@@ -14,35 +47,25 @@ Features users assume exist. Missing these = product feels incomplete.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Automatic submission capture (accepted + wrong) | Core promise: "never miss a submission"; manual logging kills retention | MEDIUM | Requires content script intercepting LeetCode's network layer (GraphQL/XHR); LeetCode's DOM changes break this regularly — multiple existing extensions (LeetPlug, LeetSync) solve this same problem |
-| Per-problem history: attempt count, timestamp, result | Users need to see their full attempt record, not just "solved once" | LOW | Can be stored in chrome.storage.local or IndexedDB; straightforward once capture works |
-| FSRS-based review scheduling (due dates per problem) | The entire value proposition; without it this is just a logger | HIGH | ts-fsrs library exists (TypeScript, ES modules, supports browser); requires storing Card state, running repeat() on each rating |
-| "Due today" review queue in dashboard | Users need to know what to do next; a queue without today's view is useless | LOW | Filter stored cards by nextReview <= now; simple query |
-| Dashboard accessible from extension icon | Standard extension UX; popup or new-tab page | LOW | Popup (300×400px) or full-page new tab; choice affects layout |
-| Browser notification when reviews are due | Without this, users forget to open the dashboard | MEDIUM | Chrome Alarms API (MV3) + chrome.notifications; alarms fire reliably but service worker must re-register on startup — known MV3 pitfall |
-| Link back to the LeetCode problem page for review | Reviews must happen on LeetCode itself (no in-extension editor); this is load-bearing for usability | LOW | Store problem URL/slug at capture time; open in new tab |
-| Problem metadata: title, difficulty, tags | Users need to identify what they're reviewing; difficulty informs FSRS parameters | LOW | Captured at submission time from the LeetCode page DOM |
-| Local-only data storage (no account required) | Privacy expectation for dev tools; account creation is a high-friction barrier for a niche tool | MEDIUM | chrome.storage.local (~5MB) is fine for most users; heavy users (1000+ submissions) may need IndexedDB (~unlimited) |
-| Self-assessment rating after review (Again / Hard / Good / Easy) | Required by FSRS; without this the algorithm cannot compute next interval | LOW | Four-button UI shown after user returns from LeetCode; mirrors Anki's rating system |
-
----
+| "Hint" button on wrong-submission popup | Every AI coding tool (LeetCopilot, Copilot, ChatGPT) offers tiered hints; users expect graduated help | LOW | Replaces the plain toast; same Shadow DOM popup pattern as existing rating dialog |
+| "Full Solution" button on same popup | The counterpart to hints; users need an escape hatch when genuinely stuck | LOW | Same popup, different system prompt sent to Claude |
+| Loading state while AI generates | Without it, the popup appears frozen for 5-15 seconds after click | LOW | Spinner or "Thinking..." text while fetch is in flight |
+| Error state for missing API key | User forgot to configure key — must show an actionable message, not a broken UI | LOW | Check `chrome.storage.local` before calling API; show "Add your API key in Settings" with a shortcut |
+| Error state for API failures | 429 rate limit, 529 overloaded, network error — these happen routinely | LOW | Display human-readable error in the popup; never show raw JSON |
+| Dismiss / close button | User has read the response and wants to continue coding | LOW | Already in existing dialog pattern (`host.remove()`) |
+| Response displayed inline in the popup | Must appear where the user triggered it — not a new tab, not the extension popup | MEDIUM | Shadow DOM popup in `content-toast.js` is the right surface; requires expanding the existing dialog with a response area |
 
 ### Differentiators (Competitive Advantage)
 
-Features that set the product apart. Not required, but valued.
+Features that set the product apart. Not required, but valuable.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| AI feedback on wrong submissions (hint-only vs full explanation) | Competing tools log failures but don't help you understand them; AI turns a wrong answer into a learning moment | HIGH | OpenRouter API call on wrong submission capture; user-provided API key; offer two modes: "nudge me" (hint) or "show me" (full walkthrough); progressive hint model used by LeetCopilot validates the demand |
-| Capture wrong submissions (not just accepted) | Most trackers (LeetSync, LeetHub) only capture accepted submissions; wrong answers are equally valuable for FSRS scheduling | MEDIUM | Must distinguish "Wrong Answer", "Time Limit Exceeded", "Runtime Error" result types from submission response |
-| Tracks solution code per submission | Users want to see what they wrote before vs now; "how did I solve this 3 months ago?" is a real question | LOW | Store code string alongside result; display in history view |
-| Correct-on-first-attempt vs multiple-attempt tracking | FSRS benefits from this signal: first-try success = longer interval; multiple attempts = shorter | LOW | Derived from stored attempt count per session; no extra capture needed |
-| Daily activity view with attempt counts per problem | Shows "I tried Problem X 4 times today before getting it" — motivating and diagnostic | LOW | Group stored attempts by date; render as list or mini-heatmap |
-| User-selectable LLM model via OpenRouter | Different users have different LLM preferences (cost vs quality); OpenRouter supports GPT-4, Claude, Gemini in one integration | MEDIUM | OpenRouter BYOK model; user stores their own key in extension settings; model selector dropdown |
-| Submission code stored for AI context | AI feedback is dramatically better when it has the actual wrong code to analyze | LOW | Pass captured code as context to the AI prompt alongside the problem description |
-| Data export/import (JSON) | Local-only storage is lost if browser data is cleared; export lets users back up and migrate | LOW | JSON.stringify the storage, offer a download; parse and restore on import; the javydevx/leetcode-tracker precedent validates this need |
-
----
+| Hint vs Full Solution as distinct UX — not just different prompts | Hint shows "think about X approach" with no code; Full Solution shows working code with explanation. Visual distinction (different button colors, labeled response header) reinforces that one spoils the answer | MEDIUM | Two system prompts; response area labels which mode was requested; hint buttons styled differently from solution button |
+| Contextual prompt: include failing test case, expected output, actual output | Passing the specific failing test case transforms feedback from generic to targeted. "Your code returns 3 for [1,2,3] but expected 6" is actionable; "your logic might be wrong" is not | MEDIUM | Requires storing `last_testcase`, `expected_output`, `code_output` from the `/check/` response at capture time — minor schema change in `background.js` |
+| Streaming response rendering | Response appears token-by-token rather than all-at-once after a blank pause. Dramatically improves perceived responsiveness for 3-10 second responses | HIGH | Architecture: content script opens a long-lived port (`chrome.runtime.connect`) to service worker; service worker streams fetch and relays chunks via `port.postMessage`. Service worker stays alive while port is open. Non-trivial but well-understood MV3 pattern. |
+| Markdown rendering for AI response | Claude outputs markdown: backtick code blocks, bold text, bullet lists. Raw text with literal backticks is noticeably bad UX for code explanations | MEDIUM | No external library needed for v1.1: a minimal regex-based renderer (~50 lines) handles the common patterns. Works inside Shadow DOM without CSP issues. |
+| Hint framing that avoids spoiling the approach | Hint system prompt explicitly forbids mentioning the algorithm name or showing code — pure Socratic nudge | LOW | Pure prompt engineering, zero code complexity. Differentiates from tools that call partial solutions "hints". |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
@@ -50,80 +73,74 @@ Features that seem good but create problems.
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| In-extension code editor / re-solve in popup | "One-stop shop"; users like the idea of solving without leaving the extension | Defeats the purpose: LeetCode's runtime, test cases, and IDE features can't be replicated; reviews should happen on LeetCode proper | Link directly to the LeetCode problem page; the review IS solving it on LeetCode again |
-| Cloud sync / user accounts | "I want my data on all my devices" | Requires a backend, database, auth, hosting costs, GDPR compliance; kills the "zero infrastructure" design; out of scope per PROJECT.md | JSON export/import for manual migration; document the limitation clearly |
-| Social features (compare with friends, leaderboards) | Gamification appeal | High complexity; niche demand for a personal tool; adds backend requirement | Stay personal-progress-focused; don't add social graph complexity |
-| LeetCode Premium problem access / scraping | "Show me premium problems I haven't paid for" | Chrome Web Store policy violation; legal risk under LeetCode ToS | Only track problems the user actually encounters through their own LeetCode session |
-| Built-in AI model (no API key needed) | Lower friction for users | Requires server-side proxy, hosting cost, API key management on the backend, rate limiting; completely breaks the "local-only, no backend" constraint | OpenRouter BYOK; document setup once clearly in onboarding; the friction is a one-time cost |
-| Streak tracking / daily goal gamification | Motivating for some users | Already provided by LeetCode itself; duplicating it adds clutter; "solving to maintain streak" incentivizes low-quality practice over retention | Focus on "due reviews" as the daily action signal instead of arbitrary streaks |
-| Full problem content storage (descriptions, images) | "I want to see the problem in the extension" | Copyright concern with storing LeetCode's proprietary content; storage bloat; LeetCode's CSP may block scraping | Store problem title, slug, and difficulty only; link to the live problem page for full content |
-| Timer / time-spent-per-problem tracking | Popular feature (LeetCode Timer extension exists) | Scope creep; the value of this tool is retention scheduling, not time management; a separate extension already does this well | Out of scope; recommend the dedicated LeetCode Timer extension to users who want this |
+| Auto-trigger AI on every wrong submission | "Feels smart and proactive" | Burns API credits on every test run and typo. Chrome Web Store policies are strict about unexpected network calls. Users want control over when AI is invoked. | Keep "Hint" and "Full Solution" as explicit user-triggered buttons only |
+| Chat / follow-up questions in the popup | Natural extension — "explain more", "show an alternative approach" | Multiplies UI complexity: input field, message history, scroll state, multi-turn context management. Out of scope for this milestone. | Single-shot response for v1.1; chat can be v1.2+ once the single-shot UX is validated |
+| Caching AI responses in IndexedDB | "Efficient — same submission won't re-call the API" | Wrong submissions for the same problem often differ (different code, different failing test). Stale cache gives wrong feedback. Adds DB schema complexity. | No caching for v1.1. Users who click "Hint" again get a fresh response. |
+| Fetching problem description from LeetCode GraphQL | "More context = better feedback" | LeetCode's GraphQL requires auth cookies that rotate. Adds a fragile network call and a new failure mode. Claude can infer the problem from titleSlug + user code alone. | Use titleSlug + code + error message + failing test case. Sufficient for good feedback. |
+| Streaming via `sendMessage` loop | Streaming UX is desirable | `chrome.runtime.sendMessage` is not designed for high-frequency token-by-token relay. Each call has overhead; 50+ calls per response creates jank. | Use `chrome.runtime.connect()` (long-lived port) for streaming, not `sendMessage` |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Submission Capture (content script)]
-    └──required by──> [Problem history storage]
-                          └──required by──> [FSRS scheduling]
-                                                └──required by──> [Due today queue]
-                                                                      └──required by──> [Browser notifications]
-
-[Self-assessment rating UI]
-    └──required by──> [FSRS scheduling] (ratings drive interval calculation)
-
-[OpenRouter API key (settings)]
-    └──required by──> [AI feedback on wrong submissions]
-                          └──enhanced by──> [Stored submission code as AI context]
-
-[Problem history storage]
-    └──required by──> [Daily activity view]
-    └──required by──> [Data export/import]
-    └──required by──> [Link to LeetCode problem for review]
+[Wrong submission captured] (existing: saveSubmission → SHOW_TOAST)
+    └──triggers──> [AI Feedback Popup with Hint + Solution buttons]
+                       ├──requires──> [API key in chrome.storage.local]
+                       │                  └──exists: settings.openRouterApiKey (may rename to anthropicApiKey)
+                       ├──requires──> [Explicit user button click (Hint OR Full Solution)]
+                       │
+                       ├──AI call path (non-streaming, v1.1)──>
+                       │      [background.js: fetch POST /v1/messages, await full response]
+                       │          └──requires──> [submission payload in message to background]
+                       │                             └──enhanced by──> [last_testcase + expected_output + code_output]
+                       │                                                   └──requires──> [schema addition at capture time]
+                       │
+                       ├──AI call path (streaming, future)──>
+                       │      [content script: chrome.runtime.connect() opens port]
+                       │          └──[background: streaming fetch, port.postMessage per chunk]
+                       │
+                       ├──enhances──> [Markdown rendering of response]
+                       └──enhances──> [Streaming response]
 ```
 
 ### Dependency Notes
 
-- **FSRS scheduling requires self-assessment rating**: The FSRS algorithm's `repeat()` function takes the card state and a rating (Again=1, Hard=2, Good=3, Easy=4) and returns the next card state with computed next review date. Without explicit ratings, there is no scheduling.
-- **AI feedback requires API key setup**: If the user hasn't configured their OpenRouter key, AI feedback must degrade gracefully (hide the AI button, not crash).
-- **Submission capture is the root dependency**: Every other feature depends on reliably capturing submissions. If the content script breaks (due to a LeetCode DOM update), nothing works. This is the highest-risk dependency.
-- **Browser notifications require alarm registration on service worker startup**: MV3 service workers do not persist between browser sessions; alarms must be re-registered each time the service worker wakes. Failure to do this = silent notification loss.
+- **API key must exist before any call:** The popup must check `chrome.storage.local` for the key before showing Hint/Solution buttons, or check at click time and show an inline error. Keys are already stored under `settings.openRouterApiKey` — the field name may need updating to `anthropicApiKey` since the project now targets Claude directly, not OpenRouter.
+- **API call should run in service worker, not content script:** Content scripts CAN call external APIs in MV3 (no policy restriction), but running the API call in the background service worker keeps the raw API key off the page context (isolated from LeetCode's JavaScript). The content script sends a message with the submission data; the background fetches and returns the response.
+- **Streaming requires port, not sendMessage:** If streaming is added, the architecture must use `chrome.runtime.connect()`. This is a deliberate architectural choice, not an optimization — `sendMessage` is not suitable for high-frequency chunk relay.
+- **Enhanced context requires schema change:** `last_testcase`, `expected_output`, and `code_output` are available in the raw `/check/` response but currently discarded in `saveSubmission()`. They must either be stored in IndexedDB or included in the `SHOW_AI_FEEDBACK` message payload at capture time. The payload approach (pass-through without storage) is simpler and avoids a DB migration.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1)
+### Launch With (v1.1)
 
 Minimum viable product — what's needed to validate the concept.
 
-- [ ] Automatic submission capture (accepted + wrong answers) — without this there is no product
-- [ ] Problem history stored locally (title, difficulty, result, timestamp, code) — foundation for everything
-- [ ] FSRS scheduling — the core differentiator; every other LeetCode tracker uses fixed intervals (1/3/7/14 days); FSRS adapts
-- [ ] Due today review queue in popup/dashboard — the daily action surface
-- [ ] Self-assessment rating UI (Again / Hard / Good / Easy) — required by FSRS; without it scheduling can't run
-- [ ] Link to LeetCode problem page from review queue — reviews happen on LeetCode; this is the "go solve it" button
-- [ ] Browser notification when reviews are due — passive retention; without it the tool is invisible on non-active days
-- [ ] Basic settings: OpenRouter API key input — enables AI features; even if AI feedback is optional in v1, collecting the key means no migration pain later
+- [ ] Wrong submission popup shows "Hint" and "Full Solution" buttons — replace the plain `SHOW_TOAST` for wrong answers with a richer popup
+- [ ] Clicking either button sends submission data to background, calls Claude API (non-streaming), displays response in popup
+- [ ] Missing API key: inline error "Add your API key in Settings" — popup does not break
+- [ ] API errors (rate limit, network failure): human-readable error message in popup
+- [ ] Response rendered with minimal markdown (code blocks, bold) using inline regex renderer
+- [ ] Dismiss / close on button click or overlay click
 
 ### Add After Validation (v1.x)
 
-Features to add once core is working.
+Features to add once non-streaming is confirmed working.
 
-- [ ] AI feedback on wrong submissions (hint mode + explanation mode) — highest differentiator; add once capture+scheduling is proven stable
-- [ ] Daily activity view — motivating; add when there's enough history to make it meaningful (after ~1 week of use)
-- [ ] Data export/import (JSON) — add when users have data worth protecting; premature if they're still evaluating the tool
-- [ ] Correct-on-first-attempt tracking with FSRS signal — small improvement to scheduling quality; low effort
+- [ ] Pass `last_testcase` + `expected_output` + `code_output` in prompt — improves feedback quality significantly; requires adding these fields to the capture payload
+- [ ] Streaming response via long-lived port — improves perceived responsiveness; add after the non-streaming path is stable
+- [ ] Hint prompt refinement: explicit prohibition on algorithm name and code in hint mode — pure prompt tuning, zero code change
 
 ### Future Consideration (v2+)
 
-Features to defer until product-market fit is established.
+Features to defer until the AI feedback UX is validated.
 
-- [ ] Multiple LLM model selector — user value unclear until they've used the AI feature; add based on feedback
-- [ ] Full submission code diff view (old code vs new code) — interesting but requires more complex UI; defer
-- [ ] Pattern/category-based review grouping — HN commenters requested this; meaningful once user has 50+ problems; defer
-- [ ] Mastery threshold (auto-archive a card once stability is high enough) — FSRS supports this via retrievability score; adds complexity; defer
+- [ ] Follow-up chat / multi-turn conversation in popup
+- [ ] Cross-problem pattern analysis ("you consistently struggle with DP")
+- [ ] Language-aware prompt variations (different hints for Python vs Java verbosity)
 
 ---
 
@@ -131,22 +148,16 @@ Features to defer until product-market fit is established.
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Submission capture (accepted + wrong) | HIGH | MEDIUM | P1 |
-| FSRS scheduling | HIGH | MEDIUM | P1 |
-| Due today review queue | HIGH | LOW | P1 |
-| Self-assessment rating (Again/Hard/Good/Easy) | HIGH | LOW | P1 |
-| Link to LeetCode problem for review | HIGH | LOW | P1 |
-| Browser notifications (due reviews) | HIGH | MEDIUM | P1 |
-| Problem history storage (local) | HIGH | LOW | P1 |
-| OpenRouter API key settings | MEDIUM | LOW | P1 |
-| AI feedback on wrong submissions | HIGH | HIGH | P2 |
-| Daily activity view | MEDIUM | LOW | P2 |
-| Data export/import (JSON) | MEDIUM | LOW | P2 |
-| Stored code as AI context | MEDIUM | LOW | P2 |
-| First-attempt vs multi-attempt signal | LOW | LOW | P2 |
-| Multiple LLM model selector | LOW | MEDIUM | P3 |
-| Pattern/category grouping for reviews | MEDIUM | MEDIUM | P3 |
-| Mastery threshold / auto-archive | LOW | MEDIUM | P3 |
+| Hint + Full Solution buttons replacing toast | HIGH | LOW | P1 |
+| Claude API call (non-streaming, background) | HIGH | LOW | P1 |
+| Missing API key error state | HIGH | LOW | P1 |
+| API error handling (rate limit, network) | HIGH | LOW | P1 |
+| Markdown rendering (code blocks, bold, bullets) | MEDIUM | LOW | P1 |
+| Distinct hint vs solution UX framing | MEDIUM | LOW | P1 |
+| Pass failing test case / expected output in prompt | HIGH | MEDIUM | P2 |
+| Streaming response via long-lived port | MEDIUM | HIGH | P2 |
+| Hint prompt that blocks algorithm name + code | MEDIUM | LOW | P2 |
+| Follow-up chat in popup | LOW | HIGH | P3 |
 
 **Priority key:**
 - P1: Must have for launch
@@ -155,38 +166,81 @@ Features to defer until product-market fit is established.
 
 ---
 
-## Competitor Feature Analysis
+## API Context: What to Send to Claude
 
-| Feature | Lanki (HN tool) | javydevx/leetcode-tracker | DSA Memoizer | LeetSync/LeetHub | Our Approach |
-|---------|-----------------|---------------------------|--------------|-------------------|--------------|
-| Submission auto-capture | Manual | Manual | Manual | Accepted only | Auto-capture accepted + wrong via content script |
-| Spaced repetition algorithm | Custom score formula | Fixed intervals (1/3/7/14/30 days) | Fixed intervals (3/7/15 days) | None | FSRS (adaptive, tunable retention rate) |
-| AI feedback on wrong answers | None | None | None | None | OpenRouter + user API key; hint or full explanation |
-| Rating-based scheduling | Easy/Hard/Medium | Not present | Not present | Not present | Again/Hard/Good/Easy (standard FSRS ratings) |
-| Wrong answer capture | Not supported | Not supported | Not supported | Not supported | Core feature |
-| Local-only storage | Yes (MongoDB local) | Yes (localStorage) | Not local (extension) | GitHub repo | Yes (chrome.storage + IndexedDB) |
-| Browser notifications | None | None | Yes (basic) | None | Chrome Alarms API + notifications |
-| Data export | None | JSON export/import | None | GitHub (implicit) | JSON export/import |
-| Open source | Yes | Yes | No | Yes | Intended yes |
+**Minimum viable context (all available in current submission record):**
+- Problem title / slug
+- User's submitted code
+- Programming language
+- Status ("Wrong Answer", "Time Limit Exceeded", "Runtime Error")
+
+**Enhanced context (requires adding fields to capture payload):**
+- `last_testcase` — the specific input that failed
+- `expected_output` — correct answer for that input
+- `code_output` — what the user's code actually produced
+
+Passing the failing test case is the single highest-value improvement to feedback quality. It converts abstract advice into concrete diagnosis.
+
+**Do not send:**
+- Full problem description — requires fragile LeetCode DOM scraping
+- All past submissions for this problem — not relevant to the immediate wrong answer
+- FSRS card state — not relevant to code correctness
+
+---
+
+## Streaming Architecture Detail (MV3-Specific)
+
+**HIGH confidence — verified against official Chrome docs and Anthropic streaming docs.**
+
+**Non-streaming (v1.1):**
+1. Content script sends `chrome.runtime.sendMessage({ type: 'GET_AI_FEEDBACK', payload: {...} })`
+2. Service worker does `fetch('https://api.anthropic.com/v1/messages', { stream: false })`
+3. Awaits full JSON response, returns text via `sendResponse`
+4. Content script renders complete response at once
+5. Service worker stays alive because `return true` signals async response to Chrome
+
+**Streaming (v1.x if added):**
+1. Content script opens port: `const port = chrome.runtime.connect({ name: 'ai-stream' })`
+2. Service worker's `chrome.runtime.onConnect` handler receives port, starts streaming fetch
+3. Each SSE `content_block_delta` event sends `port.postMessage({ chunk: text })`
+4. Content script receives chunks and appends to the response area in real time
+5. Service worker sends `port.postMessage({ done: true })` on `message_stop` event
+6. Port connection keeps service worker alive throughout the stream — no keepalive hack needed
+
+The Claude Streaming API emits `content_block_delta` events with `{ type: "text_delta", text: "..." }`. Parse by reading the `data:` line of each SSE event, JSON.parse it, check `type === 'content_block_delta'` and `delta.type === 'text_delta'`, then use `delta.text`.
+
+---
+
+## Markdown Rendering Approach
+
+**MEDIUM confidence — based on Shadow DOM constraints and Claude's output patterns.**
+
+Claude's code feedback reliably uses:
+- Triple-backtick code blocks (``` language ... ```)
+- Inline backticks for identifiers
+- `**bold**` for emphasis
+- `- bullet` lists
+
+**Option A — Inline regex renderer (~50 lines, recommended for v1.1):**
+Handles the four patterns above. Zero bundle size. Works inside Shadow DOM without CSP issues. No new dependency.
+
+**Option B — marked.js bundled UMD (~35KB minified):**
+Full CommonMark support. Must be bundled (no CDN in MV3 CSP). Overhead is justified only if rendering complex docs.
+
+**Recommendation:** Build a minimal inline renderer first. If it proves insufficient (nested lists, tables, complex code blocks), swap in marked.js. The switch is a one-file change.
 
 ---
 
 ## Sources
 
-- [LeetCopilot: 12 Best LeetCode Chrome Extensions 2026](https://leetcopilot.dev/blog/best-leetcode-chrome-extensions-2025) — competitor feature survey (MEDIUM confidence: single commercial source)
-- [Lanki HN thread: Show HN: spaced repetition tool for coding problems](https://news.ycombinator.com/item?id=40173237) — user feature requests from HN comments (MEDIUM confidence: community validated)
-- [javydevx/leetcode-tracker GitHub](https://github.com/javydevx/leetcode-tracker) — feature set of closest open-source analog (HIGH confidence: live repo)
-- [LeetPlug GitHub](https://github.com/LorenzoBe/LeetPlug) — submission interception technique reference (MEDIUM confidence)
-- [ts-fsrs GitHub](https://github.com/open-spaced-repetition/ts-fsrs) — official FSRS TypeScript implementation, confirms four-rating API (HIGH confidence: official source)
-- [FlashRecall: LeetCode Anki blog](https://flashrecall.app/blog/leetcode-anki) — user pain points with manual LeetCode review (MEDIUM confidence)
-- [DSA Prep](https://www.dsaprep.dev/) — feature set of active competitor (MEDIUM confidence)
-- [SpaceLeet](https://spaceleet.vercel.app/) — AI + spaced repetition for LeetCode feature set (MEDIUM confidence)
-- [Chrome Alarms API docs](https://developer.chrome.com/docs/extensions/reference/api/alarms) — MV3 alarm behavior for notifications (HIGH confidence: official Chrome docs)
-- [Hacker News DSA spaced repetition CLI](https://news.ycombinator.com/item?id=45480280) — implementation patterns and feature priorities (LOW confidence: minimal engagement)
-- [Building AutoDeck: AI SRS lessons](https://www.seangoedecke.com/autodeck/) — AI-driven spaced repetition design lessons (MEDIUM confidence: practitioner account)
-- [LeetCode feedback GitHub issues](https://github.com/LeetCode-Feedback/LeetCode-Feedback/issues) — signal on what users find broken/missing (MEDIUM confidence)
+- [Claude API Streaming Docs](https://platform.claude.com/docs/en/build-with-claude/streaming) — SSE event format, `content_block_delta` structure (HIGH confidence — official Anthropic docs)
+- [Chrome Extension MV3 Service Worker Lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) — termination constraints, port-based keepalive (HIGH confidence — official Chrome docs)
+- [MV3 Service Worker Keepalive via Port](https://gist.github.com/sunnyguan/f94058f66fab89e59e75b1ac1bf1a06e) — community-verified port connection pattern (MEDIUM confidence)
+- [Best AI Tools for LeetCode 2025](https://leetcopilot.dev/blog/best-ai-tools-for-leetcode-2025) — UX patterns for hint vs solution in the space (MEDIUM confidence)
+- [How AI Chatbots Help Without Giving Answers](https://dev.to/pratikshya_behera_/how-ai-chatbots-helped-me-improve-at-leetcode-without-giving-me-the-answers-4cn2) — user expectations for progressive hints (MEDIUM confidence)
+- LeetReminder codebase: `background.js`, `content-toast.js`, `popup.js`, `manifest.json` — existing infrastructure and constraints (HIGH confidence — direct code inspection)
 
 ---
 
-*Feature research for: Chrome extension — LeetCode FSRS tracker with AI feedback*
-*Researched: 2026-03-12*
+*Feature research for: AI code feedback — LeetReminder v1.1 milestone*
+*Researched: 2026-03-13*

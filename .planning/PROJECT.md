@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A Chrome extension that automatically tracks LeetCode submissions (both wrong and accepted), schedules spaced repetition reviews using the FSRS algorithm, and gives users a dashboard to monitor daily progress and a review queue with in-page rating.
+A Chrome extension that automatically tracks LeetCode submissions, schedules spaced repetition reviews using the FSRS algorithm, and provides AI-powered feedback on wrong submissions with hint and full solution modes.
 
 ## Core Value
 
@@ -23,11 +23,12 @@ Users never forget a LeetCode problem — every submission is tracked and the FS
 - Daily problem tracking with attempt counts per question — v1.0
 - Extension icon badge shows count of due reviews — v1.0
 - Settings page for OpenRouter API key and notification preferences — v1.0
+- AI feedback on wrong submissions — user chooses hint or full solution — v1.1
+- OpenRouter API integration (user provides their own API key) — v1.1
 
 ### Active
 
-- [ ] AI feedback on wrong submissions — user chooses hint or full solution
-- [ ] OpenRouter API integration (user provides their own API key)
+(None — planning next milestone)
 
 ### Out of Scope
 
@@ -35,13 +36,15 @@ Users never forget a LeetCode problem — every submission is tracked and the FS
 - In-extension code editor — reviews happen on LeetCode itself
 - Mobile app — Chrome extension only
 - Built-in/hosted AI backend — user brings their own API key via OpenRouter
+- Streaming AI responses — non-streaming sufficient; models respond in 1-3s
 
 ## Context
 
-Shipped v1.0 with ~3,869 LOC (JS/HTML/CSS/JSON).
-Tech stack: Chrome MV3, IndexedDB, ts-fsrs (UMD), Shadow DOM.
+Shipped v1.1 with ~2,289 LOC in extension/ (JS/HTML/CSS).
+Tech stack: Chrome MV3, IndexedDB, ts-fsrs (UMD), Shadow DOM, OpenRouter API.
 LeetCode uses REST endpoints (POST /submit/ + GET /check/) for submissions, not GraphQL.
 IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
+AI feedback via OpenRouter with user-selectable model (5 options).
 
 ## Constraints
 
@@ -55,22 +58,16 @@ IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Local-only storage (chrome.storage.local + IndexedDB) | No backend complexity, privacy-first, zero hosting cost | Good |
-| OpenRouter for AI feedback | Multi-provider flexibility, user brings own key, simple REST API | Pending (v1.1) |
+| OpenRouter for AI feedback | Multi-provider flexibility, user brings own key, simple REST API | Good |
 | FSRS over SM-2 | More modern algorithm, better retention modeling, open-source | Good |
 | REST intercept over GraphQL | LeetCode uses REST for submissions — confirmed via live traffic | Good |
 | store.add() with ConstraintError for dedup | Simpler than check-then-insert, race-condition safe | Good |
 | UMD bundle for ts-fsrs | MV3 service workers can't use ES modules with importScripts | Good |
 | Shadow DOM (closed) for toast/rating UI | Isolates extension UI from LeetCode page styles | Good |
 | Minimum 1-day review interval | FSRS learning steps (minutes) don't suit re-solving LeetCode problems | Good |
-
-## Current Milestone: v1.1 AI Feedback
-
-**Goal:** Give users AI-powered feedback on wrong submissions — hint or full solution via Gemini API.
-
-**Target features:**
-- Wrong submission popup with "Hint" and "Full Solution" buttons
-- OpenRouter API integration using existing API key setting
-- AI response displayed inline in the popup
+| Non-intrusive side panel for wrong submissions | User feedback: centered overlay too disruptive while coding | Good |
+| User-selectable AI model | Flexibility across providers/price points via OpenRouter | Good |
+| No callback in fire-and-forget sendMessage | Prevents "message port closed" Chrome warnings | Good |
 
 ---
-*Last updated: 2026-03-13 after v1.1 milestone started*
+*Last updated: 2026-03-15 after v1.1 milestone complete*

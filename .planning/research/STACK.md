@@ -1,187 +1,201 @@
 # Stack Research
 
-**Domain:** Chrome Extension (LeetCode tracker with FSRS spaced repetition + AI feedback)
-**Researched:** 2026-03-12
-**Confidence:** MEDIUM-HIGH (core stack HIGH, version numbers MEDIUM — some npm versions could not be confirmed via direct registry access)
+**Domain:** Chrome Extension MV3 — AI feedback via Anthropic Messages API (v1.1 addendum)
+**Researched:** 2026-03-13
+**Confidence:** HIGH (all critical claims verified against official Anthropic docs and Chrome extension documentation)
 
 ---
 
-## Recommended Stack
+> **Scope note:** This file supersedes the v1.0 STACK.md for AI integration decisions.
+> The v1.0 stack (plain MV3 JS, IndexedDB, ts-fsrs UMD, Shadow DOM) is already shipped and
+> validated. Only additions/changes needed for v1.1 AI feedback are documented here.
 
-### Core Technologies
+---
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| WXT | 0.20.18 | Chrome extension framework | Clear 2025 market leader for extension development. Vite-powered, active maintenance (released Feb 22 2025), framework-agnostic, auto-imports, built-in storage wrapper, HMR for service workers and content scripts. Outperforms Plasmo (maintenance mode) and CRXJS (plugin-only, no built-in APIs) |
-| TypeScript | 5.x (latest) | Type safety across entire codebase | Mandatory for ts-fsrs and @openrouter/sdk which both ship TypeScript types. Catches card state bugs at compile time instead of runtime |
-| React | 19.x | Popup/dashboard UI | React 19 compiler auto-optimizes re-renders — critical for the popup dashboard which shows live review state. WXT has first-class `@wxt-dev/module-react` support |
-| Tailwind CSS | 4.x | Styling | WXT + Tailwind v4 is a confirmed working combination with starter templates. Produces lean, consistent UI without custom CSS overhead. Must configure `rem` → `px` to avoid host-page font-size leakage into popup |
-| Chrome MV3 | — | Extension platform | Required by Chrome Web Store. WXT targets MV3 by default. Background is a service worker, not a persistent background page |
-
-### Spaced Repetition
-
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| ts-fsrs | 5.2.3 | FSRS algorithm implementation | The official TypeScript FSRS implementation from the open-spaced-repetition org. Actively maintained, ships ES modules, supports both FSRS v5 and v6. Supersedes fsrs.js (deprecated by the same org). Node >= 20 required but this runs in the browser, not Node |
+## Recommended Stack — v1.1 Additions Only
 
 ### AI Integration
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| @openrouter/sdk | 0.9.11 | OpenRouter API client | Official SDK from OpenRouterTeam. Type-safe, supports streaming, provides unified access to 300+ models. Beta — pin exact version. For a user-side-key extension, the SDK is simpler than raw fetch |
-| Native fetch (fallback) | — | OpenRouter API calls | If SDK has MV3 service worker compatibility issues, raw fetch to `https://openrouter.ai/api/v1/chat/completions` with `Authorization: Bearer` header is fully documented and sufficient |
+| Native `fetch` | built-in | Call Anthropic Messages API from service worker | No SDK, no bundle overhead, no MV3 compatibility risk. The Messages API is a single POST endpoint. Plain fetch with 4 headers is all that is needed. The existing codebase uses plain JS with no build step — adding a Node SDK would require bundling |
+| `chrome.storage.local` | built-in | Store user's Anthropic API key | Already used in the project for settings. Field already exists as `openRouterApiKey` — rename to `anthropicApiKey`. Never in content scripts or page context |
 
-### Storage
+### No New Dependencies
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| WXT Storage (`wxt/utils/storage`) | built-in | Extension settings, FSRS card state, API key | WXT's built-in wrapper over `chrome.storage.local`. Type-safe, supports watchers, versioning, metadata. Sufficient for settings and small card datasets. Limit: 10 MB (can request `unlimitedStorage` permission to raise this) |
-| Dexie.js | 4.0 | IndexedDB for submission history | For submission history (code + timestamps + review logs), the dataset will grow unbounded. Dexie wraps IndexedDB with a clean async API. Use for the submissions table; keep FSRS card state in WXT storage for reactivity |
-
-### Development Tools
-
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| `wxt` CLI | Project scaffolding, dev server, build, zip | `npx wxt` — generates MV3 manifest, handles multi-entrypoint bundling |
-| `@wxt-dev/module-react` | WXT React module | Adds React JSX transform and module configuration to WXT |
-| `shadcn/ui` | Accessible UI component primitives | Copy-paste components (not a dep). Works with Tailwind v4 in extension popups. Provides Card, Button, Badge, Progress, etc. for the dashboard |
-| ESLint + TypeScript ESLint | Linting | Standard TS project linting |
-| Prettier | Formatting | Consistent code style |
+The v1.1 feature requires **zero new npm packages or library files.** The Anthropic Messages API
+is simpler than the existing LeetCode REST interception pattern already in the codebase.
 
 ---
 
-## Content Script: Network Interception Strategy
+## How to Call the Anthropic API from a Service Worker
 
-This is the most critical technical decision in the stack. LeetCode submission detection requires intercepting XHR/fetch responses in the page context.
-
-**The MV3 constraint:** Content scripts run in an isolated world — they cannot directly intercept page-initiated network requests. `chrome.webRequest` can no longer read response bodies in MV3.
-
-**The solution:** Inject a script into the **MAIN world** (page context) that overrides `window.fetch` and `XMLHttpRequest` before LeetCode's JavaScript loads. The injected script posts captured submission data to the content script via `window.postMessage`. The content script relays to the service worker via `chrome.runtime.sendMessage`.
+### Endpoint and Headers
 
 ```
-Page context (injected script)         Content script world           Service worker
-  ↓ override fetch/XHR                      ↓ listen postMessage         ↓ store + schedule
-  ↓ capture /submit response body    →      ↓ chrome.runtime.sendMessage → FSRS + IndexedDB
+POST https://api.anthropic.com/v1/messages
 ```
 
-WXT supports `world: 'MAIN'` content scripts natively in its entrypoint configuration, making this pattern straightforward.
+Required headers:
 
-**Do not use:** `declarativeNetRequest` (cannot read response body), `chrome.webRequest` in MV3 (response body blocked), MSW (requires service worker registration on page origin — not possible for content scripts).
+| Header | Value | Notes |
+|--------|-------|-------|
+| `x-api-key` | `{user's key}` | Read from `chrome.storage.local` |
+| `anthropic-version` | `2023-06-01` | Fixed string — this is the stable API version |
+| `content-type` | `application/json` | Standard JSON body |
+| `anthropic-dangerous-direct-browser-access` | `true` | **Required for browser CORS** — see below |
+
+### CORS Behavior
+
+Anthropic added CORS support in August 2024 (SDK 0.27.0 / API change). Without the
+`anthropic-dangerous-direct-browser-access: true` header, the API returns a CORS error
+for all browser-origin requests (including Chrome extension service workers).
+
+**Service worker context:** Chrome extension service workers are browser-origin contexts.
+The `anthropic-dangerous-direct-browser-access` header is required even in a service worker.
+Confirmed by real-world extension implementations and the open GitHub issue thread.
+
+**The name is intentional.** Anthropic named it this way to discourage embedding API keys
+in public web apps. For a bring-your-own-key Chrome extension this is the correct pattern —
+the key is the user's own key, stored locally, never transmitted except to Anthropic.
+
+### Minimal Fetch Example
+
+```javascript
+async function callAnthropic(apiKey, systemPrompt, userMessage) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.content[0].text; // first text block
+}
+```
 
 ---
 
-## Installation
+## Manifest Changes Required
 
-```bash
-# Bootstrap project
-npx wxt@latest init leetreminder
-# Select: React, TypeScript, Tailwind CSS
+### 1. Add `host_permissions` for `api.anthropic.com`
 
-# Add WXT React module
-npm install @wxt-dev/module-react
-
-# Spaced repetition
-npm install ts-fsrs
-
-# AI integration
-npm install @openrouter/sdk@0.9.11
-
-# IndexedDB for submission history
-npm install dexie
-
-# UI components (shadcn — copy-paste, no package install)
-# Run shadcn init after Tailwind is configured
-npx shadcn@latest init
-
-# Dev dependencies (most included by WXT init)
-npm install -D typescript @types/chrome eslint prettier
+```json
+"host_permissions": [
+  "https://leetcode.com/*",
+  "https://neetcode.io/*",
+  "https://api.anthropic.com/*"
+]
 ```
+
+Without this, Chrome blocks the fetch from the service worker entirely (not a CORS issue — a
+Chrome extension permission issue). The CSP `content_security_policy` field does **not** need
+to be added or changed — the default MV3 CSP restricts `script-src` only; `fetch()` network
+requests to declared `host_permissions` are not blocked by CSP.
+
+**Verification:** Chrome MV3 documentation confirms `host_permissions` governs network access
+to external origins. CSP `connect-src` directives are separate from `host_permissions` and the
+default extension page CSP does not include `connect-src` restrictions.
+
+### 2. No CSP changes needed
+
+The default MV3 `content_security_policy` is:
+
+```
+script-src 'self' 'wasm-unsafe-eval'; object-src 'self';
+```
+
+This restricts script loading only. `fetch()` calls from service workers to declared
+`host_permissions` origins are not blocked by this policy. Do not add a custom
+`content_security_policy` unless there is a specific reason — the Chrome Web Store review
+process scrutinizes CSP relaxations.
+
+---
+
+## Model Recommendation
+
+Use `claude-haiku-4-5-20251001` (API alias: `claude-haiku-4-5`).
+
+| Model | API ID | Input | Output | Rationale |
+|-------|--------|-------|--------|-----------|
+| **Claude Haiku 4.5** | `claude-haiku-4-5-20251001` | $1/MTok | $5/MTok | Fastest, cheapest, strong coding performance (73.3% SWE-bench). For hint/solution generation on LeetCode problems this is more than sufficient |
+| Claude Sonnet 4.6 | `claude-sonnet-4-6` | $3/MTok | $15/MTok | Use if Haiku quality is demonstrably insufficient for complex problems |
+| Claude Opus 4.6 | `claude-opus-4-6` | $5/MTok | $25/MTok | Overkill for single-problem hints |
+
+A typical hint request is ~300 input tokens (problem title + user code + error message) and
+~400 output tokens. At Haiku 4.5 rates: approximately **$0.000275 per request** — effectively
+free from a user's perspective.
+
+**Expose model as a user setting?** Not recommended for v1.1. Hard-code Haiku 4.5 and
+revisit if users request Opus/Sonnet. Reduces UI complexity.
+
+---
+
+## API Key Storage
+
+Store as `settings.anthropicApiKey` in `chrome.storage.local` — the same `settings` object
+already used by the extension for `openRouterApiKey` and notification preferences.
+
+**Rename from `openRouterApiKey` to `anthropicApiKey`:** The existing popup settings form
+already has the field wired up; only the key name and label text need updating.
+
+**Do not** store the key in `chrome.storage.sync` — sync storage has a 100KB total quota and
+is shared across devices, which could create confusion if a user has different keys per device.
+
+**Do not** store the key in `sessionStorage` or `localStorage` — these are not accessible
+from the service worker.
 
 ---
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| WXT | Plasmo | Never for new projects — Plasmo is in maintenance mode as of 2025 |
-| WXT | CRXJS (Vite plugin) | Only if you need a minimal Vite plugin with no framework opinions and are prepared to wire up storage, messaging, and build tooling manually |
-| WXT | Bare Vite + webpack | Never — WXT IS Vite under the hood but adds all the extension-specific config automatically |
-| ts-fsrs | fsrs.js | Never — the ts-fsrs authors explicitly deprecated fsrs.js in favor of ts-fsrs |
-| ts-fsrs | SM-2 (custom) | Only if FSRS is overkill (it is not — FSRS has measurably better retention curves) |
-| @openrouter/sdk | Raw fetch | If the SDK has MV3 CSP issues or bloats bundle; raw fetch to OpenRouter's endpoint works identically |
-| Dexie.js | chrome.storage.local with unlimitedStorage | chrome.storage.local is simpler but lacks query capabilities; use it only if submission volume will stay under ~2K records |
-| Dexie.js | RxDB | Overkill — RxDB adds reactive sync and replication we do not need for local-only storage |
-| React 19 | React 18 | React 18 is fine if react-compiler causes issues; both work with WXT |
-| shadcn/ui | Radix UI directly | shadcn adds Tailwind styling on top of Radix; use Radix directly only if you want full custom styling |
+| Recommended | Alternative | Why Not |
+|-------------|-------------|---------|
+| Plain `fetch` | `@anthropic-ai/sdk` npm package | SDK requires a bundler (not used in this project), adds ~300KB to extension size, and the `dangerouslyAllowBrowser: true` constructor flag is equivalent to our header approach. No benefit for a single endpoint call |
+| Plain `fetch` | OpenRouter proxy | OpenRouter was referenced in earlier planning but the active milestone explicitly specifies direct Anthropic API. OpenRouter adds a middleman and requires a separate API key |
+| `chrome.storage.local` | Hardcoded API key | Never — users must provide their own key per Chrome Web Store policy |
+| `chrome.storage.local` | `chrome.storage.session` | Session storage is cleared when browser closes; users would need to re-enter key every browser restart |
 
 ---
 
-## What NOT to Use
+## What NOT to Add
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| Plasmo | Maintenance mode — lagging Parcel, community-reported build issues, shrinking maintainer presence | WXT |
-| CRXJS (for this project) | No built-in storage/messaging APIs; still pre-stable; provides only a Vite plugin requiring manual extension wiring | WXT |
-| fsrs.js | Officially deprecated by open-spaced-repetition org; maintainer recommends ts-fsrs | ts-fsrs 5.x |
-| webpack | No HMR for extension contexts, slow rebuild, no tree-shaking by default | WXT (Vite under the hood) |
-| `chrome.webRequest` for response body capture | Blocked in MV3 — cannot read response bodies; will silently fail | MAIN-world content script with `window.fetch` override |
-| localStorage for extension data | Not shared across extension contexts (popup, service worker, content script) | `chrome.storage.local` via WXT storage util |
-| Directly importing heavy AI SDKs (LangChain, LlamaIndex) | Massive bundle sizes, server-side assumptions, unnecessary abstraction for a simple chat completion call | @openrouter/sdk or raw fetch |
-
----
-
-## Stack Patterns by Variant
-
-**For FSRS scheduling (pure calculation, no I/O):**
-- Run in the service worker or inline in the popup
-- ts-fsrs is pure TypeScript with no DOM or Node.js dependencies
-- Use `createEmptyCard()` → `new FSRS()` → `fsrs.repeat(card, now)` → persist chosen rating card back to storage
-
-**For submission detection (content script):**
-- Entrypoint with `world: 'MAIN'` in WXT
-- Override `fetch` at `document_start` to intercept LeetCode's submission API calls
-- Filter for LeetCode's `/problems/*/submit/` response pattern
-- Post to isolated content script world via `postMessage`
-
-**For AI feedback (service worker):**
-- Receive message from popup with problem code + error output
-- Call `@openrouter/sdk` or `fetch` to OpenRouter
-- Stream response back to popup via `chrome.runtime.sendMessage` or streaming port
-
-**For review scheduling (service worker + alarm):**
-- Register `chrome.alarms.create()` for next due card at service worker startup
-- Re-register alarm each time service worker wakes (alarms are not guaranteed to persist across restarts)
-- Use `chrome.notifications.create()` to surface due review to user
-
----
-
-## Version Compatibility
-
-| Package | Compatible With | Notes |
-|---------|-----------------|-------|
-| wxt@0.20.18 | React 19, Tailwind 4, TypeScript 5 | Confirmed — WXT starter templates use this combination |
-| ts-fsrs@5.2.3 | TypeScript 5.x, ESM | ESM-only; WXT's Vite build handles this correctly |
-| @openrouter/sdk@0.9.11 | ESM only | ESM-only package. MV3 service workers support ESM modules. Verify CSP policy does not block `https://openrouter.ai` in production |
-| dexie@4.0 | Chrome 80+, MV3 | IndexedDB available in all extension contexts (popup, content script, service worker) |
-| shadcn/ui | Tailwind 4, React 19 | shadcn CLI generates components; verify `tailwind.config` is v4 compatible post-init |
+| `@anthropic-ai/sdk` npm package | Requires bundler this project does not have; `dangerouslyAllowBrowser: true` is equivalent to setting the header manually; adds significant bundle weight | Plain `fetch` |
+| Streaming responses | Adds message-passing complexity (streaming from service worker to popup requires ports, not sendMessage). Haiku 4.5 is fast enough that a single response completes in 1-3 seconds | Single `await response.json()` |
+| Custom `content_security_policy` in manifest | Not needed for fetch to `host_permissions` origins; Chrome Web Store reviewers scrutinize any CSP entry | Omit the field entirely |
+| Server-side proxy | Defeats the local-only, privacy-first design; adds hosting cost and complexity | Direct fetch from service worker |
+| LangChain / LlamaIndex | Massive overhead for a single-turn completion call | Plain `fetch` |
 
 ---
 
 ## Sources
 
-- WXT comparison and version: [2025 State of Browser Extension Frameworks](https://redreamality.com/blog/the-2025-state-of-browser-extension-frameworks-a-comparative-analysis-of-plasmo-wxt-and-crxjs/) — MEDIUM confidence (WebSearch + WebFetch verified)
-- WXT latest release: [wxt-dev/wxt GitHub Releases](https://github.com/wxt-dev/wxt/releases) — HIGH confidence (official GitHub, v0.20.18, Feb 22 2025)
-- WXT storage API: [wxt.dev/guide/essentials/storage](https://wxt.dev/guide/essentials/storage.html) — HIGH confidence (official docs)
-- ts-fsrs: [open-spaced-repetition/ts-fsrs GitHub](https://github.com/open-spaced-repetition/ts-fsrs) — HIGH confidence (official repo, v5.2.3)
-- ts-fsrs API: [TS-FSRS Official Docs](https://open-spaced-repetition.github.io/ts-fsrs/) — HIGH confidence (official docs)
-- OpenRouter SDK: [OpenRouterTeam/typescript-sdk GitHub](https://github.com/OpenRouterTeam/typescript-sdk) — HIGH confidence (official repo, v0.9.11, Feb 23 2026)
-- OpenRouter quickstart: [openrouter.ai/docs/quickstart](https://openrouter.ai/docs/quickstart) — HIGH confidence (official docs)
-- Chrome MV3 network interception: [Intercepting Network Requests in Chrome Extensions](https://rxliuli.com/blog/intercepting-network-requests-in-chrome-extensions/) + [Chrome Developers MV3 content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts) — MEDIUM confidence (blog + official docs)
-- Chrome storage limits: [chrome.storage API reference](https://developer.chrome.com/docs/extensions/reference/api/storage) — HIGH confidence (official docs)
-- Dexie.js: [dexie.org](https://dexie.org) — MEDIUM confidence (official site, v4.0 confirmed)
-- WXT + React + Tailwind + shadcn template: [imtiger/wxt-react-shadcn-tailwindcss-chrome-extension](https://github.com/imtiger/wxt-react-shadcn-tailwindcss-chrome-extension) — MEDIUM confidence (community template, confirms stack compatibility)
+- Anthropic Models Overview: [platform.claude.com/docs/en/about-claude/models/overview](https://platform.claude.com/docs/en/about-claude/models/overview) — HIGH confidence (official docs, verified 2026-03-13)
+- Anthropic Pricing: [platform.claude.com/docs/en/about-claude/pricing](https://platform.claude.com/docs/en/about-claude/pricing) — HIGH confidence (official docs, verified 2026-03-13)
+- CORS support announcement (Aug 2024): [simonwillison.net/2024/Aug/23/anthropic-dangerous-direct-browser-access](https://simonwillison.net/2024/Aug/23/anthropic-dangerous-direct-browser-access/) — HIGH confidence (contemporaneous coverage of official Anthropic change)
+- CORS GitHub issue resolution: [github.com/anthropics/anthropic-sdk-typescript/issues/410](https://github.com/anthropics/anthropic-sdk-typescript/issues/410) — HIGH confidence (official repo issue, resolved in SDK 0.27.0)
+- Chrome MV3 CSP defaults: [developer.chrome.com/docs/extensions/mv3/manifest/content_security_policy](https://developer.chrome.com/docs/extensions/mv3/manifest/content_security_policy/) — HIGH confidence (official Chrome docs)
+- Chrome MV3 host_permissions: Chrome Extensions developer docs — HIGH confidence; `host_permissions` governs network access; CSP governs script loading separately
+- Real-world Chrome extension + Anthropic: [github.com/aramxc/claude-on-chrome](https://github.com/aramxc/claude-on-chrome) — MEDIUM confidence (community example confirming pattern)
 
 ---
 
-*Stack research for: Chrome Extension — LeetCode tracker with FSRS spaced repetition and OpenRouter AI*
-*Researched: 2026-03-12*
+*Stack research for: v1.1 AI feedback — Anthropic Messages API in existing MV3 service worker*
+*Researched: 2026-03-13*

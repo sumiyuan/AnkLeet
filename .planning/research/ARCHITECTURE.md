@@ -1,10 +1,492 @@
 # Architecture Research
 
 **Domain:** Chrome Extension with Content Script Injection, Background Service Worker, Local Storage, FSRS Spaced Repetition
-**Researched:** 2026-03-12
-**Confidence:** HIGH (official Chrome documentation verified)
+**Researched:** 2026-03-13 (updated for v1.1 AI feedback milestone)
+**Confidence:** HIGH (based on direct reading of existing source files + official Chrome docs)
 
-## Standard Architecture
+---
+
+## v1.1 Focus: AI Feedback Integration Architecture
+
+This document is updated for the v1.1 milestone. The section below documents how the new AI feedback feature integrates with the existing codebase. The original architecture from v1.0 research is preserved at the bottom.
+
+---
+
+## Existing Architecture (as-built, v1.0)
+
+### Actual Component Inventory
+
+| File | World | Run At | Role |
+|------|-------|--------|------|
+| `background.js` | Service Worker | on-demand | Central coordinator: IndexedDB, FSRS, message routing, alarms, notifications |
+| `content-main.js` | MAIN | document_start | fetch/XHR interceptor — posts to window |
+| `content-isolated.js` | ISOLATED | document_start | Bridges window.postMessage to chrome.runtime.sendMessage |
+| `content-toast.js` | ISOLATED | document_end | Shadow DOM UI: toast for wrong submissions, rating dialog for accepted |
+| `popup.js` | Popup page | — | Dashboard, Reviews, Settings tabs |
+
+### Existing Message Types
+
+| Type | Direction | Handler |
+|------|-----------|---------|
+| `SUBMISSION_CAPTURED` | content-isolated → background | `saveSubmission()` — persists, triggers SHOW_TOAST or SHOW_RATING |
+| `RATE_REVIEW` | popup / content-toast → background | `rateReview()` — updates FSRS card |
+| `GET_DUE_TODAY` | popup → background | Returns enriched card array |
+| `GET_STATS` | popup → background | Returns `{ totalReviews, retentionRate, streak }` |
+| `GET_TODAY_SUBMISSIONS` | popup → background | Returns submissions from today |
+| `SHOW_TOAST` | background → content-toast | Triggers "submission captured" toast |
+| `SHOW_RATING` | background → content-toast | Triggers FSRS rating dialog |
+
+### Wrong Submission Flow (current, pre-AI)
+
+```
+User submits wrong answer on LeetCode
+    |
+    v
+content-main.js (MAIN world) intercepts XHR/fetch
+    | window.postMessage({source:'leetreminder', type:'submission', data})
+    v
+content-isolated.js (ISOLATED world)
+    | chrome.runtime.sendMessage({type:'SUBMISSION_CAPTURED', payload})
+    v
+background.js saveSubmission()
+    - Persists to IndexedDB (submissions store)
+    - statusDisplay is NOT 'Accepted' → notifyTab({type:'SHOW_TOAST'})
+    |
+    v
+content-toast.js showToast('✓ Submission captured')
+```
+
+---
+
+## v1.1 Integration Design
+
+### Where the API Call Lives: background.js (service worker)
+
+The Claude API call must live in `background.js`. This is not a choice — it is architecturally forced by three constraints:
+
+1. **CORS**: Content scripts are bound by the host page's (leetcode.com's) CORS policy. `api.anthropic.com` is not in LeetCode's CORS allow-list. The fetch will be blocked. Service workers are not subject to page-level CORS — they use host permissions from `manifest.json`.
+
+2. **API key security**: The key is stored in `chrome.storage.local`. Content scripts can read `chrome.storage` but if the key were passed to a content script to make the call, it would be briefly accessible in a context that shares memory with the page. Keeping it exclusively in the service worker context is safer.
+
+3. **Data access**: The submission record (code, error output, titleSlug, language) is in IndexedDB. Only the service worker has an open `db` reference. Passing all that data to a content script to make a call and pass it back is wasteful.
+
+### New Message Types Needed
+
+| Type | Direction | Payload | Response |
+|------|-----------|---------|----------|
+| `GET_AI_FEEDBACK` | content-toast → background | `{ submissionId, mode: 'hint' \| 'full' }` | `{ feedback: string }` or `{ error: string }` |
+
+That is the only new message type needed. The existing content-toast.js already has `chrome.runtime.sendMessage` wired for RATE_REVIEW — the same pattern applies here.
+
+No new message types are needed for the background-to-content direction. The AI response travels back as the `sendResponse` callback argument of the existing `chrome.runtime.onMessage` listener. This is a single request-response, not a stream.
+
+### Non-Streaming vs Streaming
+
+**Recommendation: non-streaming for v1.1.**
+
+Streaming (Server-Sent Events from the Claude API) is technically achievable from the service worker — the service worker can call `fetch()` and consume a ReadableStream. However, relaying that stream to the content script requires `chrome.runtime.Port` (long-lived connections), not the simpler `sendMessage`/`sendResponse` pattern. Port adds meaningful complexity:
+
+- The content script must call `chrome.runtime.connect()` instead of `sendMessage()`
+- The service worker must handle `chrome.runtime.onConnect`
+- Both sides must handle disconnect events and cleanup
+- The streaming loop must not block the service worker's event loop
+
+Non-streaming: one `fetch()` call to the Claude API with `stream: false`, wait for the full JSON response, call `sendResponse({ feedback: text })`. This fits perfectly into the existing `return true` async pattern already used for RATE_REVIEW, GET_DUE_TODAY, etc.
+
+The UX tradeoff is a loading spinner instead of progressive text reveal. For the short responses the Claude API returns for hint/full-solution prompts (typically under 500 tokens), the wait is 1-3 seconds — acceptable without streaming.
+
+### Where to Display in Shadow DOM
+
+The AI feedback should display inside the **existing wrong-submission dialog in content-toast.js** — not as a separate popup, not in the extension popup. The user is on the LeetCode problem page when the wrong submission happens. The toast/dialog is already showing. Add the AI buttons there.
+
+The current `showToast()` for wrong submissions is a simple 2-second auto-dismiss toast. This needs to change to a dismissible dialog (like `showRatingDialog`) that includes "Hint" and "Full Solution" buttons and a content area for the AI response.
+
+**New flow:**
+
+```
+Wrong submission captured
+    |
+    v
+background.js saveSubmission()
+    - Saves to IndexedDB (same as now)
+    - Sends SHOW_WRONG_SUBMISSION to tab (replaces SHOW_TOAST for wrong answers)
+      payload: { submissionId, titleSlug, title }
+    |
+    v
+content-toast.js showWrongSubmissionDialog(submissionId, titleSlug, title)
+    - Shadow DOM dialog (similar structure to showRatingDialog)
+    - "Hint" button + "Full Solution" button + "Dismiss" link
+    - User clicks "Hint":
+        | chrome.runtime.sendMessage({type:'GET_AI_FEEDBACK', payload:{submissionId, mode:'hint'}})
+        v
+        [loading state in dialog]
+        |
+        v (sendResponse callback)
+        Render feedback text in dialog content area
+```
+
+### No API Key Guard Needed in Content Script
+
+The content-toast.js dialog does not need to check whether an API key is configured. The check happens in background.js. If no key is configured, background.js returns `{ error: 'No API key configured. Add your Anthropic API key in Settings.' }` and the dialog renders that message inline.
+
+### Submitting the submissionId
+
+The wrong submission flow currently does not send the submissionId to content-toast.js. The SHOW_TOAST message has no payload. To enable the AI feedback request, the SHOW_WRONG_SUBMISSION message must include the submissionId (the IndexedDB `id` field or the LeetCode `submission_id`).
+
+In `saveSubmission()` in background.js, the `addRecord()` call returns the IndexedDB auto-increment key. That key must be captured and included in the `notifyTab` call.
+
+---
+
+## Updated System Overview (v1.1)
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                          CHROME BROWSER                              │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐     │
+│  │                   LEETCODE.COM TAB                          │     │
+│  │                                                             │     │
+│  │  ┌──────────────────────────────────────────────────────┐   │     │
+│  │  │  content-main.js (MAIN world, document_start)        │   │     │
+│  │  │  XHR/fetch interceptor → window.postMessage          │   │     │
+│  │  └──────────────────────────────────────────────────────┘   │     │
+│  │                 |  window.postMessage                        │     │
+│  │  ┌──────────────────────────────────────────────────────┐   │     │
+│  │  │  content-isolated.js (ISOLATED, document_start)      │   │     │
+│  │  │  Relay: window msg → chrome.runtime.sendMessage      │   │     │
+│  │  └──────────────────────────────────────────────────────┘   │     │
+│  │                 |  SUBMISSION_CAPTURED                       │     │
+│  │  ┌──────────────────────────────────────────────────────┐   │     │
+│  │  │  content-toast.js (ISOLATED, document_end)           │   │     │
+│  │  │  Shadow DOM UI:                                       │   │     │
+│  │  │  - showToast (simple info, unchanged)                 │   │     │
+│  │  │  - showWrongSubmissionDialog [NEW]                    │   │     │
+│  │  │    ├── "Hint" btn → GET_AI_FEEDBACK(mode:'hint')      │   │     │
+│  │  │    ├── "Full Solution" btn → GET_AI_FEEDBACK(full)    │   │     │
+│  │  │    └── feedback content area                          │   │     │
+│  │  │  - showRatingDialog (accepted, unchanged)             │   │     │
+│  │  └──────────────────────────────────────────────────────┘   │     │
+│  └─────────────────────────────────────────────────────────────┘     │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │               BACKGROUND SERVICE WORKER (background.js)      │    │
+│  │                                                              │    │
+│  │  Existing handlers (unchanged):                              │    │
+│  │  - SUBMISSION_CAPTURED → saveSubmission()                    │    │
+│  │  - RATE_REVIEW → rateReview()                                │    │
+│  │  - GET_DUE_TODAY, GET_STATS, GET_TODAY_SUBMISSIONS           │    │
+│  │                                                              │    │
+│  │  New handler [NEW]:                                          │    │
+│  │  - GET_AI_FEEDBACK                                           │    │
+│  │    1. Read submission from IndexedDB by id                   │    │
+│  │    2. Read API key from chrome.storage.local                 │    │
+│  │    3. Build prompt (code + error + problem context)          │    │
+│  │    4. fetch('https://api.anthropic.com/v1/messages', ...)    │    │
+│  │    5. sendResponse({ feedback }) or { error }                │    │
+│  │                                                              │    │
+│  │  Modified: saveSubmission() [MODIFIED]                       │    │
+│  │  - Capture IndexedDB key from addRecord()                    │    │
+│  │  - Pass key in SHOW_WRONG_SUBMISSION payload                 │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                         |  fetch()                                    │
+│                         v                                            │
+│              api.anthropic.com/v1/messages                           │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │                   POPUP (popup.js)                           │    │
+│  │  Settings tab: Anthropic API key input → chrome.storage      │    │
+│  │  (No changes needed for AI feedback — runs on content page)  │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │                       STORAGE LAYER                          │    │
+│  │  chrome.storage.local: { settings: { openRouterApiKey } }    │    │
+│  │  (key name: openRouterApiKey — already in schema, reuse it)  │    │
+│  │                                                              │    │
+│  │  IndexedDB (leetreminder, v2):                               │    │
+│  │  - submissions: code, error, titleSlug, statusDisplay        │    │
+│  │  - cards, reviewLogs (unchanged)                             │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Component Responsibilities
+
+| Component | Responsibility | Communicates With |
+|-----------|----------------|-------------------|
+| `content-main.js` | XHR/fetch interception in MAIN world (unchanged) | `content-isolated.js` via window.postMessage |
+| `content-isolated.js` | Relay postMessage → chrome.runtime (unchanged) | `background.js` via chrome.runtime.sendMessage |
+| `content-toast.js` | Shadow DOM UI on LeetCode page — wrong submission dialog with AI buttons [modified], rating dialog [unchanged] | `background.js` via chrome.runtime.sendMessage (both directions) |
+| `background.js` | All data operations, FSRS, alarms, notifications, Claude API calls [new GET_AI_FEEDBACK handler] | content-toast (via tabs.sendMessage), popup (via onMessage), IndexedDB, chrome.storage, api.anthropic.com |
+| `popup.js` | Dashboard, Reviews, Settings (Settings tab already has openRouterApiKey field) | `background.js` via chrome.runtime.sendMessage |
+
+---
+
+## Architectural Patterns
+
+### Pattern 1: API Calls Belong in the Service Worker
+
+**What:** All external API calls — including Claude — must originate from `background.js`, not from content scripts.
+
+**When to use:** Always, for any cross-origin fetch in a Chrome extension.
+
+**Trade-offs:** The service worker may be terminated between the user clicking the button and the response arriving. In practice, the in-flight `fetch()` keeps the service worker alive (Chrome counts active fetch promises as activity). The 30-second termination timer resets while a fetch is pending.
+
+**Example:**
+```javascript
+// In background.js — inside chrome.runtime.onMessage.addListener
+if (message.type === 'GET_AI_FEEDBACK') {
+  (async () => {
+    if (!db) { try { db = await openDatabase(); } catch (err) { sendResponse({ error: 'DB unavailable' }); return; } }
+
+    // 1. Load submission
+    const submission = await getSubmissionById(db, message.payload.submissionId);
+    if (!submission) { sendResponse({ error: 'Submission not found' }); return; }
+
+    // 2. Load API key
+    const { settings } = await chrome.storage.local.get('settings');
+    const apiKey = settings?.openRouterApiKey;
+    if (!apiKey) { sendResponse({ error: 'No API key configured. Add your Anthropic API key in Settings.' }); return; }
+
+    // 3. Build prompt and call API
+    try {
+      const feedback = await callClaudeAPI(apiKey, submission, message.payload.mode);
+      sendResponse({ feedback });
+    } catch (err) {
+      sendResponse({ error: err.message });
+    }
+  })();
+  return true; // keep message channel open for async response
+}
+```
+
+### Pattern 2: Extend the Wrong-Submission Dialog in content-toast.js
+
+**What:** Replace the current auto-dismiss `showToast()` for wrong submissions with a persistent `showWrongSubmissionDialog()` that includes AI feedback buttons and a content area.
+
+**When to use:** The toast approach is wrong for this feature — the user needs to be able to read the AI response, which requires a persistent dismissible panel.
+
+**Trade-offs:** The existing `removeHost()` function already handles cleanup. The rating dialog pattern (`showRatingDialog`) provides the correct structural template. Reuse the same shadow DOM host id (`leetreminder-toast-host`) so at most one dialog is visible at a time.
+
+**Example structure:**
+```javascript
+function showWrongSubmissionDialog(submissionId, titleSlug, title) {
+  removeHost(); // remove any previous toast/dialog
+
+  const host = document.createElement('div');
+  host.id = 'leetreminder-toast-host';
+  document.body.appendChild(host);
+  const shadow = host.attachShadow({ mode: 'closed' });
+
+  // ... styles (reuse existing dialog styles, add .feedback-area, .loading)
+
+  // Buttons trigger GET_AI_FEEDBACK message
+  hintBtn.addEventListener('click', function () {
+    setLoadingState(true);
+    chrome.runtime.sendMessage(
+      { type: 'GET_AI_FEEDBACK', payload: { submissionId, mode: 'hint' } },
+      function (response) {
+        setLoadingState(false);
+        if (response && response.feedback) {
+          renderFeedback(response.feedback);
+        } else {
+          renderFeedback(response?.error || 'Failed to get feedback.');
+        }
+      }
+    );
+  });
+}
+```
+
+### Pattern 3: Async Response with return true
+
+**What:** The existing pattern in `background.js` for all async message handlers — return `true` from `onMessage.addListener` to keep the response channel open.
+
+**When to use:** Any handler that calls `sendResponse` asynchronously (after an await or inside a Promise).
+
+**Trade-offs:** Must be `true` (literal), not a truthy value. Chrome checks this synchronously before the IIFE runs. All existing handlers already use this pattern — the GET_AI_FEEDBACK handler follows the same structure.
+
+---
+
+## Data Flow
+
+### AI Feedback Request Flow
+
+```
+User sees wrong submission captured
+    |
+    v [SHOW_WRONG_SUBMISSION from background, replaces SHOW_TOAST]
+content-toast.js renders wrong submission dialog
+    - Shows: problem title, "Hint" button, "Full Solution" button, "Dismiss"
+    |
+    | (user clicks "Hint")
+    v
+chrome.runtime.sendMessage({
+  type: 'GET_AI_FEEDBACK',
+  payload: { submissionId: <IDB key>, mode: 'hint' }
+})
+    |
+    v [background.js onMessage handler — return true for async]
+background.js GET_AI_FEEDBACK handler:
+  1. getSubmissionById(db, submissionId)
+     → { code, statusDisplay, titleSlug, title, lang, error output }
+  2. chrome.storage.local.get('settings')
+     → settings.openRouterApiKey (field already exists in schema)
+  3. if (!apiKey) → sendResponse({ error: 'No API key...' })
+  4. fetch('https://api.anthropic.com/v1/messages', {
+       method: 'POST',
+       headers: {
+         'x-api-key': apiKey,
+         'anthropic-version': '2023-06-01',
+         'content-type': 'application/json'
+       },
+       body: JSON.stringify({
+         model: 'claude-3-5-haiku-20241022',  // fast, cheap, good for code
+         max_tokens: 1024,
+         messages: [{ role: 'user', content: buildPrompt(submission, mode) }]
+       })
+     })
+  5. const data = await response.json()
+     → data.content[0].text
+  6. sendResponse({ feedback: data.content[0].text })
+    |
+    v [sendResponse callback in content-toast.js]
+content-toast.js renders feedback text in dialog content area
+    - Markdown-lite rendering (or plain text — decide in implementation)
+    - "Dismiss" button remains available
+```
+
+### Modified saveSubmission Flow
+
+```
+saveSubmission(data, tabId):
+  ...
+  const saved = await addRecord(db, record);  // returns IDB key (integer) or null
+  if (saved !== null) {
+    if (record.statusDisplay === 'Accepted') {
+      // unchanged — maybeCreateCard + SHOW_RATING
+    } else if (tabId !== null) {
+      // CHANGED: was notifyTab(tabId, { type: 'SHOW_TOAST' })
+      // NOW:
+      await notifyTab(tabId, {
+        type: 'SHOW_WRONG_SUBMISSION',
+        submissionId: saved,        // the IDB key from addRecord()
+        titleSlug: record.titleSlug,
+        title: record.title
+      });
+    }
+  }
+```
+
+---
+
+## New vs Modified Components
+
+| Component | Status | What Changes |
+|-----------|--------|--------------|
+| `background.js` | Modified | Add `GET_AI_FEEDBACK` message handler; modify `saveSubmission()` to send `SHOW_WRONG_SUBMISSION` with `submissionId` instead of `SHOW_TOAST` |
+| `content-toast.js` | Modified | Add `showWrongSubmissionDialog()` function; handle `SHOW_WRONG_SUBMISSION` message type; keep `showToast`, `showRatingDialog`, `maybeBlurEditor` unchanged |
+| `manifest.json` | Modified | Add `https://api.anthropic.com/*` to `host_permissions` |
+| `popup.js` | Unchanged | Settings tab already saves `openRouterApiKey` to `chrome.storage.local` — no changes needed |
+| `content-main.js` | Unchanged | Submission interception is unaffected |
+| `content-isolated.js` | Unchanged | Relay logic is unaffected |
+
+---
+
+## Build Order
+
+The dependency chain for v1.1 is shallow — this is an additive feature:
+
+```
+1. manifest.json — add host_permissions for api.anthropic.com
+   (Required before any fetch to Anthropic will be permitted)
+        |
+        v
+2. background.js — modify saveSubmission() + add GET_AI_FEEDBACK handler
+   (saveSubmission change must land before content-toast change, or
+    the dialog will receive messages it can't handle yet)
+        |
+        v
+3. content-toast.js — add showWrongSubmissionDialog() + SHOW_WRONG_SUBMISSION handler
+   (Replaces the SHOW_TOAST path for wrong submissions)
+        |
+        v
+4. Manual test: submit a wrong answer on LeetCode, verify dialog appears,
+   verify hint/full-solution buttons call API, verify response renders
+        |
+        v
+5. Test: no API key configured → error message renders inline (no crash)
+6. Test: API key invalid → error message renders inline
+7. Test: accepted submission still shows rating dialog (regression)
+8. Test: dismiss works, no memory leaks (removeHost called)
+```
+
+The popup Settings tab already stores `openRouterApiKey`. No popup changes are needed unless the field label should be updated from "OpenRouter API Key" to "Anthropic API Key" to match the actual integration.
+
+---
+
+## Integration Points
+
+### External Services
+
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| `api.anthropic.com` | `fetch()` from `background.js` service worker with `x-api-key` header | Must add to `host_permissions` in manifest.json; non-streaming (`stream: false`); key from `chrome.storage.local` |
+
+### Internal Boundaries (new/modified)
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `background.js` → `content-toast.js` | `chrome.tabs.sendMessage(tabId, { type: 'SHOW_WRONG_SUBMISSION', submissionId, ... })` | Replaces `SHOW_TOAST` for wrong submissions; submissionId is the IDB auto-increment key |
+| `content-toast.js` → `background.js` | `chrome.runtime.sendMessage({ type: 'GET_AI_FEEDBACK', payload: { submissionId, mode } })` | Same pattern as `RATE_REVIEW`; uses `return true` for async response |
+
+---
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Fetching Claude API from a Content Script
+
+**What people do:** Call `fetch('https://api.anthropic.com/...')` directly from `content-toast.js`.
+
+**Why it's wrong:** CORS blocks all cross-origin requests from content scripts to domains not permitted by the host page (leetcode.com). The request fails with a network error. Additionally, the API key would be temporarily accessible in a context closer to the page's memory.
+
+**Do this instead:** Send `GET_AI_FEEDBACK` to `background.js`. Make the fetch there.
+
+### Anti-Pattern 2: Using chrome.runtime.Port for Non-Streaming Responses
+
+**What people do:** Implement long-lived Port connections to support streaming, even when non-streaming is sufficient.
+
+**Why it's wrong:** Port adds meaningful complexity — both sides must handle connect/disconnect events, cleanup on error, and the streaming loop. For a single request-response with a 1-3 second wait, a loading spinner and `return true` async pattern is simpler and correct.
+
+**Do this instead:** Use non-streaming API call (`stream: false` in the Claude API body). Return the complete response via `sendResponse`. Add a loading state in the dialog.
+
+### Anti-Pattern 3: Showing AI Feedback in the Popup Instead of on the Page
+
+**What people do:** Route the user to the extension popup to see AI feedback after a wrong submission.
+
+**Why it's wrong:** The user is on the LeetCode problem page. Opening the popup breaks their context and requires an extra click. The wrong submission dialog is already open on the page. Add the AI buttons there.
+
+**Do this instead:** Extend `showWrongSubmissionDialog` in `content-toast.js` to include AI request buttons and a content area.
+
+### Anti-Pattern 4: Not Capturing the IDB Key from addRecord()
+
+**What people do:** Send a `SHOW_WRONG_SUBMISSION` message with only `titleSlug`, then look up the latest submission by `titleSlug` in `GET_AI_FEEDBACK`.
+
+**Why it's wrong:** A user can submit multiple wrong answers rapidly. Looking up "latest by titleSlug" is a race condition — a second submission may overwrite which record is "latest" by the time the user clicks the button. The IDB auto-increment key uniquely identifies the exact submission.
+
+**Do this instead:** `addRecord()` already returns the auto-increment key. Pass `saved` (the return value) as `submissionId` in the SHOW_WRONG_SUBMISSION payload.
+
+---
+
+## Settings Schema Note
+
+The `chrome.storage.local` settings object currently uses `openRouterApiKey` as the field name (set by the Settings tab in popup.js). The project description says the AI integration is Anthropic/Claude, not OpenRouter. The `GET_AI_FEEDBACK` handler in background.js should read `settings.openRouterApiKey` as-is (the field already exists and is populated by the current Settings UI), unless the Settings tab label/field is renamed. This is a cosmetic decision but should be consistent — if the label in popup.html is updated to "Anthropic API Key", the storage key name can stay the same to avoid a migration.
+
+---
+
+## Original Architecture (v1.0)
 
 ### System Overview
 
@@ -16,465 +498,59 @@
 │  │                   LEETCODE.COM TAB                          │     │
 │  │                                                             │     │
 │  │  ┌──────────────────────────────────────────────────────┐   │     │
-│  │  │           ISOLATED WORLD (Content Script)            │   │     │
-│  │  │  content-script.ts                                   │   │     │
-│  │  │  - Injects network interceptor into MAIN world       │   │     │
-│  │  │  - Listens for CustomEvents from page                │   │     │
-│  │  │  - Forwards submission data via chrome.runtime.msg   │   │     │
+│  │  │           ISOLATED WORLD (Content Scripts)           │   │     │
+│  │  │  content-isolated.js — relay postMessage → runtime   │   │     │
+│  │  │  content-toast.js — Shadow DOM UI                    │   │     │
 │  │  └──────────────────────────────────────────────────────┘   │     │
 │  │                                                             │     │
 │  │  ┌──────────────────────────────────────────────────────┐   │     │
-│  │  │           MAIN WORLD (Injected Script)               │   │     │
-│  │  │  injected.ts (runs in page context)                  │   │     │
-│  │  │  - Overrides window.fetch / XMLHttpRequest           │   │     │
-│  │  │  - Intercepts LeetCode submission API calls          │   │     │
-│  │  │  - Dispatches CustomEvent to content script          │   │     │
+│  │  │           MAIN WORLD (content-main.js)               │   │     │
+│  │  │  Overrides window.fetch / XMLHttpRequest             │   │     │
+│  │  │  Intercepts LeetCode submission API calls            │   │     │
+│  │  │  Posts to window for content-isolated.js to relay   │   │     │
 │  │  └──────────────────────────────────────────────────────┘   │     │
 │  └─────────────────────────────────────────────────────────────┘     │
 │                                                                      │
-│  ┌──────────────────────────────────────────┐                        │
-│  │        POPUP (popup.html + React)        │                        │
-│  │  - Dashboard: daily stats, review queue  │                        │
-│  │  - Settings: API key, preferences        │                        │
-│  │  - Communicates via chrome.runtime.msg   │                        │
-│  └──────────────────────────────────────────┘                        │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │               BACKGROUND SERVICE WORKER (background.js)      │    │
+│  │  IndexedDB, FSRS, alarms, notifications, message routing     │    │
+│  └──────────────────────────────────────────────────────────────┘    │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │               BACKGROUND SERVICE WORKER                      │    │
-│  │  service-worker.ts (event-driven, terminates when idle)      │    │
-│  │                                                              │    │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐  │    │
-│  │  │ Message  │ │  FSRS    │ │  Alarm   │ │  OpenRouter   │  │    │
-│  │  │ Handler  │ │ Engine   │ │ Handler  │ │  API Client   │  │    │
-│  │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └───────┬───────┘  │    │
-│  │       └────────────┴────────────┴───────────────┘           │    │
+│  │                   POPUP (popup.html + popup.js)               │    │
+│  │  Dashboard / Reviews / Settings tabs                          │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
 │  │                       STORAGE LAYER                          │    │
-│  │  ┌───────────────────┐  ┌───────────────────────────────┐   │    │
-│  │  │  chrome.storage   │  │         IndexedDB             │   │    │
-│  │  │  .local           │  │  (submissions, FSRS state,    │   │    │
-│  │  │  (settings, keys, │  │   review history, problem     │   │    │
-│  │  │   daily counters) │  │   metadata, code snapshots)   │   │    │
-│  │  └───────────────────┘  └───────────────────────────────┘   │    │
+│  │  chrome.storage.local: settings (captureEnabled, API key,    │    │
+│  │    notifications, notification time)                         │    │
+│  │  IndexedDB v2: submissions, cards, reviewLogs                │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Responsibilities
+### v1.0 Architectural Patterns
 
-| Component | Responsibility | Communicates With |
-|-----------|----------------|-------------------|
-| Injected Script (MAIN world) | Overrides window.fetch/XHR to detect LeetCode submission API calls; dispatches CustomEvent with payload | Content Script (via CustomEvent / window.postMessage) |
-| Content Script (ISOLATED world) | Listens for submission events from injected script; forwards to service worker via runtime messaging | Injected Script (CustomEvent), Service Worker (chrome.runtime.sendMessage) |
-| Background Service Worker | Central coordinator — processes submissions, runs FSRS scheduling, calls OpenRouter API, fires notifications, responds to popup queries | Content Script (onMessage), Popup (onMessage), Storage (read/write), Alarm API, Notifications API, External APIs (fetch) |
-| Popup (React SPA) | Dashboard UI — shows daily stats, due reviews, review history, settings management | Service Worker (chrome.runtime.sendMessage for data), Storage (can read directly) |
-| chrome.storage.local | Persists settings, API key, daily counters, extension preferences | Service Worker (primary writer), Popup (reader) |
-| IndexedDB | Persists all submissions, FSRS card state, review history, problem metadata, code snapshots | Service Worker exclusively (content scripts cannot access SW's IndexedDB) |
+**Pattern 1: MAIN World Script Injection for Network Interception**
+Content scripts run in an isolated JavaScript context and cannot intercept `window.fetch` from the page. Injecting with `"world": "MAIN"` in manifest content scripts (Chrome 111+) shares the same window object as the page.
 
-## Recommended Project Structure
+**Pattern 2: Event-Driven Service Worker with Persistent Storage**
+Service workers terminate after 30 seconds of inactivity. All state lives in IndexedDB or chrome.storage.local. Listeners must register at the top level of background.js synchronously.
 
-```
-src/
-├── background/              # Service worker entry point
-│   ├── index.ts             # Top-level listener registration (MUST be synchronous)
-│   ├── handlers/
-│   │   ├── submission.ts    # Process incoming submission, persist, schedule FSRS
-│   │   ├── review.ts        # Return due reviews to popup
-│   │   ├── ai.ts            # Call OpenRouter API for feedback
-│   │   └── alarm.ts         # Handle review-due alarms, fire notifications
-│   ├── fsrs/
-│   │   ├── engine.ts        # FSRS algorithm wrapper (ts-fsrs library)
-│   │   └── scheduler.ts     # Calculate next review date, update card state
-│   └── storage/
-│       ├── db.ts            # IndexedDB setup (schema, migrations)
-│       ├── submissions.ts   # Submission CRUD via IndexedDB
-│       ├── cards.ts         # FSRS card state CRUD via IndexedDB
-│       └── settings.ts      # Settings CRUD via chrome.storage.local
-│
-├── content/                 # LeetCode page integration
-│   ├── index.ts             # Content script entry — injects MAIN world script
-│   └── injected.ts          # Runs in MAIN world — overrides fetch/XHR
-│
-├── popup/                   # Dashboard SPA
-│   ├── index.html           # Popup entry HTML
-│   ├── main.tsx             # React root mount
-│   ├── App.tsx              # Root component + routing
-│   ├── pages/
-│   │   ├── Dashboard.tsx    # Today's activity, due reviews count
-│   │   ├── Reviews.tsx      # Due review queue with LeetCode links
-│   │   ├── History.tsx      # Submission history browser
-│   │   └── Settings.tsx     # API key, notification prefs
-│   ├── components/
-│   │   ├── ProblemCard.tsx
-│   │   ├── StatsBar.tsx
-│   │   └── AIFeedbackPanel.tsx
-│   └── hooks/
-│       ├── useStorage.ts    # chrome.storage.local reactive hook
-│       └── useMessages.ts   # chrome.runtime.sendMessage wrapper
-│
-├── shared/                  # Code shared across all contexts
-│   ├── types.ts             # TypeScript interfaces (Submission, FSRSCard, etc.)
-│   ├── constants.ts         # Alarm names, storage keys, message types
-│   └── messages.ts          # Typed message schema (discriminated union)
-│
-└── manifest.json            # Extension manifest (at project root or public/)
+**Pattern 3: chrome.alarms for Review Scheduling**
+`chrome.alarms` persists across service worker restarts and can wake a terminated service worker. Minimum period 30s (Chrome 120+).
 
-public/
-├── manifest.json            # Manifest V3 config
-└── icons/                   # Extension icons (16, 32, 48, 128px)
-```
-
-### Structure Rationale
-
-- **background/:** All service worker code isolated here; top-level `index.ts` registers all listeners synchronously — critical for MV3 compliance.
-- **content/:** Split into `index.ts` (isolated world) and `injected.ts` (main world) because they execute in different JavaScript contexts with different capabilities.
-- **popup/:** Standard React SPA; treated as a mini web app; communicates with service worker via message passing, never calls extension storage APIs directly from components (goes through hooks).
-- **shared/:** Message types must be identical across all contexts; defining them once prevents drift.
-
-## Architectural Patterns
-
-### Pattern 1: MAIN World Script Injection for Network Interception
-
-**What:** Content scripts run in an isolated JavaScript context and cannot intercept `window.fetch` from the page. The only way to intercept LeetCode's API calls is to inject a script that runs in the MAIN world (same context as the page's own JS), where it can override `window.fetch` before LeetCode's code runs.
-
-**When to use:** Any time you need to intercept network calls made by the host page's own JavaScript.
-
-**Trade-offs:** Requires `"world": "MAIN"` in manifest content scripts declaration (Chrome 111+) or `chrome.scripting.executeScript` with `world: "MAIN"`. The injected script has no access to Chrome APIs — it must communicate back via `window.postMessage` or `CustomEvent`, which the isolated-world content script relays to the service worker.
-
-**Example:**
-```typescript
-// injected.ts — runs in MAIN world (no chrome.* APIs available)
-const originalFetch = window.fetch.bind(window);
-window.fetch = async function(input, init) {
-  const response = await originalFetch(input, init);
-  const url = typeof input === 'string' ? input : input.url;
-
-  // LeetCode submission check endpoint pattern
-  if (url.includes('/submissions/detail/') && url.includes('/check/')) {
-    const clone = response.clone();
-    clone.json().then((data) => {
-      if (data.status_msg === 'Accepted' || data.run_success === false) {
-        window.dispatchEvent(new CustomEvent('leet-submission', {
-          detail: { url, data }
-        }));
-      }
-    });
-  }
-  return response;
-};
-
-// content/index.ts — runs in ISOLATED world, has chrome.* APIs
-window.addEventListener('leet-submission', (event: CustomEvent) => {
-  chrome.runtime.sendMessage({
-    type: 'SUBMISSION_DETECTED',
-    payload: event.detail
-  });
-});
-```
-
-### Pattern 2: Event-Driven Service Worker with Persistent Storage State
-
-**What:** The service worker is the extension's brain but terminates after 30 seconds of inactivity. All state must live in storage. Listeners must register at the top level of the service worker file (not inside async functions or conditionals).
-
-**When to use:** Always — this is MV3 mandatory architecture.
-
-**Trade-offs:** Cannot keep in-memory state. Must re-hydrate from storage on every wake. However, Chrome 110+ means that any incoming event or Chrome API call resets the 30-second timer, so a busy extension (receiving submission events) stays alive.
-
-**Example:**
-```typescript
-// background/index.ts — MUST register all listeners synchronously at top level
-chrome.runtime.onMessage.addListener(handleMessage);
-chrome.alarms.onAlarm.addListener(handleAlarm);
-chrome.runtime.onInstalled.addListener(handleInstalled);
-
-// DO NOT do this — listener registered async, may miss events after restart:
-// async function setup() {
-//   await loadConfig();
-//   chrome.runtime.onMessage.addListener(handleMessage); // WRONG
-// }
-```
-
-### Pattern 3: chrome.alarms for Review Scheduling
-
-**What:** Use `chrome.alarms` (not `setTimeout`) to schedule review notifications. Alarms persist across service worker restarts and can wake a terminated service worker when they fire.
-
-**When to use:** Any periodic or future-scheduled task in MV3.
-
-**Trade-offs:** Minimum period is 30 seconds (Chrome 120+). Cannot schedule sub-minute precision for production builds. Alarms may be cleared on browser restart; recreate on `onInstalled` and `onStartup`.
-
-**Example:**
-```typescript
-// background/handlers/alarm.ts
-async function scheduleNextReviewAlarm() {
-  const nextDue = await getEarliestDueReview(); // from IndexedDB
-  if (!nextDue) return;
-
-  const existingAlarm = await chrome.alarms.get('REVIEW_DUE');
-  if (existingAlarm) await chrome.alarms.clear('REVIEW_DUE');
-
-  chrome.alarms.create('REVIEW_DUE', {
-    when: nextDue.getTime()
-  });
-}
-
-// Top-level listener in background/index.ts
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'REVIEW_DUE') {
-    const dueCount = await getDueReviewCount();
-    if (dueCount > 0) {
-      chrome.notifications.create({
-        type: 'basic',
-        title: 'LeetReminder',
-        message: `${dueCount} problem${dueCount > 1 ? 's' : ''} due for review`,
-        iconUrl: 'icons/icon48.png'
-      });
-    }
-    await scheduleNextReviewAlarm(); // reschedule for next due
-  }
-});
-```
-
-### Pattern 4: Typed Message Bus (Discriminated Union)
-
-**What:** All inter-component communication happens through `chrome.runtime.sendMessage`. Define a discriminated union of message types in `shared/messages.ts` so TypeScript catches mismatched message/handler pairs at compile time.
-
-**When to use:** Every project with more than 2 message types — prevents string typos and payload shape mismatches.
-
-**Trade-offs:** Minor boilerplate overhead for a significant DX improvement.
-
-**Example:**
-```typescript
-// shared/messages.ts
-export type ExtensionMessage =
-  | { type: 'SUBMISSION_DETECTED'; payload: SubmissionPayload }
-  | { type: 'GET_DUE_REVIEWS' }
-  | { type: 'GET_AI_FEEDBACK'; submissionId: string; mode: 'hint' | 'full' }
-  | { type: 'GET_DAILY_STATS' }
-  | { type: 'SAVE_SETTINGS'; settings: Partial<UserSettings> };
-
-export type ExtensionResponse =
-  | { type: 'DUE_REVIEWS'; data: FSRSCard[] }
-  | { type: 'AI_FEEDBACK'; feedback: string }
-  | { type: 'DAILY_STATS'; data: DailyStats }
-  | { type: 'OK' };
-```
-
-## Data Flow
-
-### Submission Capture Flow
-
-```
-User submits on LeetCode.com
-    |
-    v
-LeetCode calls its own API (fetch to /check/ endpoint)
-    |
-    v (intercepted by)
-injected.ts (MAIN world)
-  - Detects submission API response
-  - Dispatches CustomEvent('leet-submission', {detail: {code, result, problem}})
-    |
-    v (via CustomEvent listener)
-content/index.ts (ISOLATED world)
-  - Receives CustomEvent
-  - Sends chrome.runtime.sendMessage({type: 'SUBMISSION_DETECTED', payload})
-    |
-    v (via chrome.runtime.onMessage)
-background/index.ts (Service Worker)
-  - Routes to handlers/submission.ts
-  - Persists submission to IndexedDB
-  - If wrong: enqueues for AI feedback (optional, user-triggered)
-  - Runs FSRS scheduling: creates/updates FSRSCard in IndexedDB
-  - Reschedules chrome.alarm for next due review date
-```
-
-### Review Due Flow
-
-```
-chrome.alarms fires 'REVIEW_DUE'
-    |
-    v
-background/handlers/alarm.ts
-  - Queries IndexedDB for due reviews count
-  - Creates chrome.notification with count
-  - Reschedules alarm for next due item
-    |
-    v (user clicks notification or opens popup)
-popup/pages/Reviews.tsx
-  - Sends chrome.runtime.sendMessage({type: 'GET_DUE_REVIEWS'})
-  - Service worker queries IndexedDB, returns FSRSCard[]
-  - Renders list with "Open on LeetCode" links
-    |
-    v (user opens LeetCode, solves problem, submits)
-[Back to Submission Capture Flow]
-  - On next submission of this problem:
-  - FSRS card updated with rating (Again/Hard/Good/Easy based on result)
-```
-
-### AI Feedback Flow
-
-```
-User clicks "Get Feedback" on a wrong submission
-    |
-    v
-popup/pages/History.tsx or Reviews.tsx
-  - Sends {type: 'GET_AI_FEEDBACK', submissionId, mode: 'hint'|'full'}
-    |
-    v
-background/handlers/ai.ts
-  - Retrieves submission from IndexedDB (code, problem name, error output)
-  - Loads API key from chrome.storage.local
-  - Calls OpenRouter API via fetch (service workers can make cross-origin requests)
-  - Returns {type: 'AI_FEEDBACK', feedback: string}
-    |
-    v
-Popup renders feedback in AIFeedbackPanel component
-```
-
-### Settings / State Management Flow
-
-```
-chrome.storage.local  ←→  background/storage/settings.ts
-        |                           |
-        |                           v (on any settings change)
-        |                    Popup can also read directly
-        v
-popup/hooks/useStorage.ts
-  - Wraps chrome.storage.local.get() + onChanged listener
-  - Reactive hook: component re-renders on storage change
-```
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| Single user (local) | Current architecture is correct — everything in IndexedDB locally |
-| Hundreds of problems | No changes needed; IndexedDB handles thousands of records efficiently |
-| 1000+ problems tracked | Add IndexedDB indexes on `nextDueDate` and `problemId` for faster queries |
-| Long-term usage (years) | Add IndexedDB migration versioning in `db.ts` — implement `onupgradeneeded` handlers from day one |
-
-### Scaling Priorities
-
-1. **First bottleneck:** IndexedDB query performance when reviewing history — solved by adding compound indexes on `(problemId, timestamp)` and `(nextDueDate)` from the start.
-2. **Second bottleneck:** Service worker startup latency — solved by keeping storage reads minimal on wake; defer heavy queries until the message handler needs them.
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Using setTimeout/setInterval for Scheduled Tasks
-
-**What people do:** Use `setTimeout(() => sendNotification(), delay)` in the service worker to schedule review reminders.
-
-**Why it's wrong:** Service workers terminate after 30 seconds of inactivity. The timer is lost when the worker terminates — the notification never fires.
-
-**Do this instead:** Register a `chrome.alarms.create()` alarm. Alarms persist independently of the service worker's lifecycle and will wake a terminated service worker when they fire.
-
-### Anti-Pattern 2: Storing Global Variables in Service Worker
-
-**What people do:** `let currentUser = null;` at the top of service-worker.ts and mutate it on each event.
-
-**Why it's wrong:** The service worker can be terminated between any two events. When it restarts, all global variables reset to their initial values. Data appears to vanish.
-
-**Do this instead:** Write any stateful data to `chrome.storage.local` or IndexedDB immediately. Re-read from storage at the start of each event handler.
-
-### Anti-Pattern 3: Registering Listeners Inside Async Functions
-
-**What people do:**
-```typescript
-async function init() {
-  const config = await loadConfig();
-  chrome.runtime.onMessage.addListener(handleMessage); // registered late
-}
-init();
-```
-
-**Why it's wrong:** Chrome requires listeners to be registered synchronously at the service worker's top level. If the worker is restarted by an incoming message, the listener is not yet registered when that message arrives — the message is dropped.
-
-**Do this instead:** Register all `addListener` calls at the top level, synchronously. Load async configuration inside the handler if needed.
-
-### Anti-Pattern 4: Cross-Origin Requests from Content Scripts
-
-**What people do:** Call `fetch('https://openrouter.ai/api/v1/...')` directly from the content script.
-
-**Why it's wrong:** Content scripts are bound by the host page's CORS policy. LeetCode.com has no relationship with OpenRouter, so the request will be blocked. Also, the user's API key would be exposed to the LeetCode page context.
-
-**Do this instead:** Send a message to the service worker, which makes the cross-origin fetch. Service workers have access to extension host permissions and are not bound by page-level CORS restrictions.
-
-### Anti-Pattern 5: Injecting Fetch Interceptor from Isolated World
-
-**What people do:** Override `window.fetch` from the content script (ISOLATED world).
-
-**Why it's wrong:** Content scripts run in an isolated JavaScript context. Their `window` object is a special proxy. Overriding `window.fetch` in the content script does NOT affect the `fetch` that LeetCode's JavaScript calls — the page's fetch and the content script's fetch are different objects.
-
-**Do this instead:** Inject a script into the MAIN world using `"world": "MAIN"` in manifest content scripts (Chrome 111+) or `chrome.scripting.executeScript({world: 'MAIN'})`. The MAIN world script shares the same `window` object as the page.
-
-## Integration Points
-
-### External Services
-
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| OpenRouter API | `fetch()` from service worker with `Authorization: Bearer {apiKey}` header | API key stored in chrome.storage.local; never exposed to content scripts or page |
-| LeetCode.com | Fetch/XHR interception in MAIN world injected script | Depends on LeetCode's private API — `/submissions/detail/{id}/check/` endpoint. Fragile; plan for DOM fallback |
-| Chrome Notifications API | `chrome.notifications.create()` from service worker | Requires `"notifications"` permission in manifest |
-| Chrome Alarms API | `chrome.alarms.create()` from service worker | Requires `"alarms"` permission; minimum 30s period |
-
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Injected Script (MAIN) -> Content Script (ISOLATED) | `window.dispatchEvent(new CustomEvent(...))` | Only way to cross the MAIN/ISOLATED boundary from MAIN world |
-| Content Script -> Service Worker | `chrome.runtime.sendMessage()` | One-time messages sufficient; use Port only if streaming data |
-| Popup -> Service Worker | `chrome.runtime.sendMessage()` | Popup queries SW for data; SW queries IndexedDB and returns results |
-| Service Worker -> Storage | `chrome.storage.local` (settings) + `IndexedDB` (all data) | SW is the single writer for IndexedDB; popup reads only via SW messages |
-| Service Worker -> External APIs | `fetch()` with host permissions | Declared in manifest `host_permissions` |
-
-## Build Order Implications
-
-The component dependency graph determines what must be built first:
-
-```
-1. shared/types.ts + shared/messages.ts
-   (No dependencies — defines contracts all other components use)
-        |
-        v
-2. background/storage/db.ts + IndexedDB schema
-   (Depends on: types; required before any data can be saved or read)
-        |
-        v
-3. content/injected.ts (MAIN world interceptor) + content/index.ts
-   (Depends on: message types; can be tested independently)
-        |
-        v
-4. background/index.ts + handlers/submission.ts + fsrs/engine.ts
-   (Depends on: storage layer; processes data from content script)
-        |
-        v
-5. background/handlers/alarm.ts + notifications
-   (Depends on: storage layer + submission handler being in place)
-        |
-        v
-6. popup/ (React dashboard)
-   (Depends on: all background handlers operational to query data)
-        |
-        v
-7. background/handlers/ai.ts (OpenRouter integration)
-   (Depends on: submission storage; independent of FSRS/alarms)
-```
+---
 
 ## Sources
 
-- [Chrome Extension Service Worker Lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) — HIGH confidence (official docs)
-- [Content Scripts Documentation](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts) — HIGH confidence (official docs)
-- [Chrome Extension Message Passing](https://developer.chrome.com/docs/extensions/develop/concepts/messaging) — HIGH confidence (official docs)
-- [chrome.storage API Reference](https://developer.chrome.com/docs/extensions/reference/api/storage) — HIGH confidence (official docs)
-- [chrome.alarms API Reference](https://developer.chrome.com/docs/extensions/reference/api/alarms) — HIGH confidence (official docs)
-- [Longer Extension Service Worker Lifetimes (Chrome 110+)](https://developer.chrome.com/blog/longer-esw-lifetimes) — HIGH confidence (official Chrome blog)
-- [Network Request Interception Patterns](https://rxliuli.com/blog/intercepting-network-requests-in-chrome-extensions/) — MEDIUM confidence (community, verified against official docs)
-- [Chrome Extension MV3 Manifest V3 Architecture Patterns](https://dev.to/javediqbal8381/understanding-chrome-extensions-a-developers-guide-to-manifest-v3-233l) — MEDIUM confidence (community, consistent with official docs)
-- [Building Chrome Extensions with React and Vite 2025](https://arg-software.medium.com/building-a-chrome-extension-with-react-and-vite-a-modern-developers-guide-83f98ee937ed) — MEDIUM confidence (community patterns)
+- [Chrome Extension Message Passing — Official Docs](https://developer.chrome.com/docs/extensions/develop/concepts/messaging) — HIGH confidence
+- [Chrome Extension Service Worker Lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle) — HIGH confidence
+- [Content Scripts Documentation](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts) — HIGH confidence
+- [Anthropic Messages API Reference](https://docs.anthropic.com/en/api/messages) — HIGH confidence (non-streaming, x-api-key header pattern)
+- Direct reading of existing source files (background.js, content-toast.js, content-isolated.js, content-main.js, popup.js, manifest.json) — HIGHEST confidence
 
 ---
 *Architecture research for: Chrome Extension with Content Script Injection, Service Worker, FSRS Spaced Repetition*
-*Researched: 2026-03-12*
+*Updated: 2026-03-13 — v1.1 AI feedback integration*
