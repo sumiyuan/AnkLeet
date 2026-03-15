@@ -147,6 +147,92 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // keep message channel open for async response
   }
 
+  if (message.type === 'CHAT_SEND_MESSAGE') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' }); return;
+        }
+      }
+      const { titleSlug, content } = message.payload;
+
+      const { settings } = await chrome.storage.local.get('settings');
+      const apiKey = settings?.openRouterApiKey;
+      if (!apiKey) {
+        sendResponse({ error: 'No API key configured. Add your OpenRouter API key in Settings.' });
+        return;
+      }
+      const model = settings?.aiModel || 'anthropic/claude-haiku-4.5';
+
+      // Load or create conversation
+      let conversation = await getConversation(db, titleSlug);
+      const now = Date.now();
+      if (!conversation) {
+        conversation = { titleSlug, messages: [], createdAt: now, updatedAt: now };
+      }
+
+      // Prepend system prompt if conversation is fresh
+      if (conversation.messages.length === 0) {
+        conversation.messages.push(buildSystemPrompt(titleSlug));
+      }
+
+      // Append user message
+      conversation.messages.push({ role: 'user', content, timestamp: now });
+      conversation.updatedAt = now;
+
+      // Cap context sent to API at last 10 messages; strip timestamps (OpenRouter only accepts role+content)
+      const messagesToSend = conversation.messages.slice(-10).map(m => ({ role: m.role, content: m.content }));
+
+      const keepAlive = setInterval(() => chrome.storage.local.get('_ping'), 20_000);
+      try {
+        const reply = await callOpenRouter(apiKey, model, messagesToSend);
+        conversation.messages.push({ role: 'assistant', content: reply, timestamp: Date.now() });
+        conversation.updatedAt = Date.now();
+        await putConversation(db, conversation);
+        sendResponse({ ok: true, reply, messages: conversation.messages });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      } finally {
+        clearInterval(keepAlive);
+      }
+    })();
+    return true; // keep message channel open for async response
+  }
+
+  if (message.type === 'CHAT_LOAD_CONVERSATION') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' }); return;
+        }
+      }
+      try {
+        const conversation = await getConversation(db, message.payload.titleSlug);
+        sendResponse({ conversation: conversation || null });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true; // keep message channel open for async response
+  }
+
+  if (message.type === 'CHAT_CLEAR_CONVERSATION') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' }); return;
+        }
+      }
+      try {
+        await deleteConversation(db, message.payload.titleSlug);
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true; // keep message channel open for async response
+  }
+
   return false;
 });
 
