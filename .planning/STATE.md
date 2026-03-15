@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: AI Feedback
-status: complete
-stopped_at: "Milestone v1.1 complete — archived"
+milestone: v1.2
+milestone_name: AI Chat
+status: active
+stopped_at: ""
 last_updated: "2026-03-15"
-last_activity: 2026-03-15 — v1.1 AI Feedback milestone shipped
+last_activity: 2026-03-15 — Milestone v1.2 started
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Users never forget a LeetCode problem — every submission is tracked and the FSRS algorithm surfaces problems for review at the optimal time.
-**Current focus:** Planning next milestone
+**Current focus:** v1.2 AI Chat — defining requirements
 
 ## Current Position
 
-Milestone: v1.1 AI Feedback — SHIPPED 2026-03-15
-All phases complete. Ready for next milestone.
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-15 — Milestone v1.2 started
 
 ## Performance Metrics
 
@@ -60,5 +60,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Milestone v1.1 complete — archived
+Stopped at: Milestone v1.2 started — defining requirements
 Resume file: None

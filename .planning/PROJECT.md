@@ -28,7 +28,21 @@ Users never forget a LeetCode problem — every submission is tracked and the FS
 
 ### Active
 
-(None — planning next milestone)
+- [ ] Persistent chat button on LeetCode problem pages that opens a side panel for back-and-forth AI conversation
+- [ ] Per-problem conversation storage in IndexedDB
+- [ ] Conversation history view with ability to browse and delete past conversations
+- [ ] New chat starts fresh each review session
+- [ ] Hint/solution output from wrong submission panel also saved into the chat conversation history
+
+## Current Milestone: v1.2 AI Chat
+
+**Goal:** Add interactive AI chat on LeetCode problem pages with per-problem conversation history
+
+**Target features:**
+- Persistent side-panel chat button on LeetCode problem pages
+- Back-and-forth AI conversation while solving problems
+- Per-problem conversation storage with history browsing and deletion
+- Wrong submission hints/solutions integrated into conversation history
 
 ### Out of Scope
 
@@ -40,7 +54,7 @@ Users never forget a LeetCode problem — every submission is tracked and the FS
 
 ## Context
 
-Shipped v1.1 with ~2,289 LOC in extension/ (JS/HTML/CSS).
+Shipped v1.1 with ~2,289 LOC in extension/ (JS/HTML/CSS). v1.2 adds interactive AI chat.
 Tech stack: Chrome MV3, IndexedDB, ts-fsrs (UMD), Shadow DOM, OpenRouter API.
 LeetCode uses REST endpoints (POST /submit/ + GET /check/) for submissions, not GraphQL.
 IndexedDB schema at version 2 with stores: submissions, cards, reviewLogs.
@@ -70,4 +84,4 @@ AI feedback via OpenRouter with user-selectable model (5 options).
 | No callback in fire-and-forget sendMessage | Prevents "message port closed" Chrome warnings | Good |
 
 ---
-*Last updated: 2026-03-15 after v1.1 milestone complete*
+*Last updated: 2026-03-15 after v1.2 milestone started*
