@@ -27,11 +27,15 @@ key-files:
   created: []
   modified:
     - extension/content-toast.js
+    - extension/content-isolated.js
+    - extension/background.js
+    - extension/popup.html
+    - extension/popup.js
 
 key-decisions:
-  - "No backdrop click dismiss — user needs persistent dialog to read AI response without accidental dismissal"
+  - "Non-intrusive side panel instead of centered overlay — user requested less blocking UX"
+  - "AI model selector in Settings — user can choose from 5 OpenRouter models"
   - "Buttons re-enable on error but stay disabled on success — prevent repeated API calls after a response is shown"
-  - "max-width: 480px for wrong submission dialog vs 360px for rating dialog — wider for code block readability"
 
 patterns-established:
   - "Shadow DOM closed root for all extension overlay UI"
@@ -58,33 +62,35 @@ completed: 2026-03-15
 - **Files modified:** 1
 
 ## Accomplishments
-- Shadow DOM persistent dialog appears after wrong LeetCode submission with red "Wrong Submission" title
+- Non-intrusive bottom-right side panel (340px) replaces centered overlay — doesn't block code editor
 - Hint button (purple) and Full Solution button (green) call GET_AI_FEEDBACK with the appropriate mode
-- Minimal markdown renderer splits triple-backtick code fences into `<pre>` blocks (dark background, monospace, `#ce9178` color) and text into `<p>` blocks
+- Minimal markdown renderer splits triple-backtick code fences into `<pre>` blocks
 - All API-sourced text set via textContent — no innerHTML risk
-- chrome.runtime.lastError checked before reading response; buttons re-enable on all error paths
+- AI model selector dropdown in Settings (5 models via OpenRouter)
+- Fixed content-isolated.js sendMessage errors (port closed, context invalidated)
 - Accepted submissions still trigger the FSRS rating dialog (no regression)
-- No backdrop click dismiss — user must use "Dismiss" button to read AI response without interruption
 
 ## Task Commits
 
-Each task was committed atomically:
-
-1. **Task 1: Add showWrongSubmissionDialog and wire SHOW_WRONG_SUBMISSION handler** - `b07ef68` (feat)
-
-**Plan metadata:** (pending final docs commit)
+1. **Task 1: Add showWrongSubmissionDialog and wire SHOW_WRONG_SUBMISSION handler** - `b07ef68`
+2. **Post-checkpoint: Side panel redesign, model selector, error fixes** - `228db58`
 
 ## Files Created/Modified
-- `extension/content-toast.js` - Added renderFeedback(), renderError(), showWrongSubmissionDialog(), and SHOW_WRONG_SUBMISSION handler branch (250 lines added, no existing functions modified)
+- `extension/content-toast.js` - showWrongSubmissionDialog() as side panel, renderFeedback(), renderError(), SHOW_WRONG_SUBMISSION handler
+- `extension/content-isolated.js` - Fixed sendMessage callback and context invalidated errors
+- `extension/background.js` - Read aiModel from settings, pass to callOpenRouter()
+- `extension/popup.html` - AI model selector dropdown
+- `extension/popup.js` - Load/save aiModel setting
 
 ## Decisions Made
-- No backdrop click dismiss: plan explicitly specifies this to prevent accidental dismissal while reading AI response
-- max-width 480px (vs 360px for rating dialog): wider layout needed for code block readability
-- Buttons re-enable on error paths, stay disabled on success: prevents duplicate API calls and re-fetching after answer is shown
+- Side panel instead of overlay: user requested non-intrusive UX
+- AI model selector: user requested ability to choose model
+- Buttons re-enable on error paths, stay disabled on success
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+- Side panel layout instead of centered overlay (user feedback)
+- Model selector and content-isolated fixes (scope expansion during checkpoint)
 
 ## Issues Encountered
 None.
