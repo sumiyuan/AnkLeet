@@ -42,7 +42,9 @@
   2. A conversation record for a problem is created in IndexedDB on the first message and updated on every subsequent exchange — data survives browser restart
   3. The IndexedDB schema migrates from v2 to v3 without data loss when the extension loads alongside existing submissions and cards
   4. CHAT_SEND_MESSAGE, CHAT_LOAD_CONVERSATION, and CHAT_CLEAR_CONVERSATION handlers respond correctly from background.js
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 06-01-PLAN.md — IndexedDB v3 migration, callOpenRouter refactor, and chat message handlers
 
 ### Phase 7: Chat Panel UI and Integration
 **Goal**: Users can have a live AI conversation on any LeetCode problem page, with wrong-submission hints seeded automatically into the chat
@@ -75,6 +77,6 @@
 | 3. Dashboard, Reviews, and Notifications | v1.0 | 3/3 | Complete | 2026-03-13 |
 | 4. API Integration | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 5. Wrong Submission Dialog | v1.1 | 1/1 | Complete | 2026-03-15 |
-| 6. Conversation Storage and Multi-Turn AI | v1.2 | 0/? | Not started | - |
+| 6. Conversation Storage and Multi-Turn AI | v1.2 | 0/1 | Not started | - |
 | 7. Chat Panel UI and Integration | v1.2 | 0/? | Not started | - |
 | 8. Conversation History | v1.2 | 0/? | Not started | - |
