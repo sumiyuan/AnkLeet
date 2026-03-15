@@ -5,9 +5,9 @@ milestone_name: AI Chat
 status: active
 stopped_at: ""
 last_updated: "2026-03-15"
-last_activity: 2026-03-15 — Milestone v1.2 started
+last_activity: 2026-03-15 — Roadmap created for v1.2 (phases 6-8)
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Users never forget a LeetCode problem — every submission is tracked and the FSRS algorithm surfaces problems for review at the optimal time.
-**Current focus:** v1.2 AI Chat — defining requirements
+**Current focus:** v1.2 AI Chat — Phase 6 ready to plan
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 6 — Conversation Storage and Multi-Turn AI
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-15 — Milestone v1.2 started
+Status: Roadmap complete, ready for phase planning
+Last activity: 2026-03-15 — Roadmap created for v1.2 (phases 6-8)
+
+```
+v1.2 Progress: [                    ] 0% (0/3 phases)
+```
 
 ## Performance Metrics
 
@@ -49,6 +53,13 @@ Last activity: 2026-03-15 — Milestone v1.2 started
 
 Full decision log in PROJECT.md Key Decisions table.
 
+**v1.2 Architecture decisions (from research):**
+- Chat panel implemented as `content-chat.js` Shadow DOM content script — same pattern as `content-toast.js`; NOT chrome.sidePanel API (cannot be opened programmatically from content scripts as of late 2024)
+- Conversations stored in IndexedDB as single document per problem (keyPath: titleSlug, embedded messages array) — simpler than separate messages store at chat scale
+- OpenRouter multi-turn via existing callOpenRouter, extended to accept messages[] array; cap at last 10 messages sent to API (context window guard)
+- History view lives in popup Chats tab — reuses existing popup infrastructure
+- Wrong submission seeding routed through background.js — content-toast.js requires no changes
+
 ### Pending Todos
 
 None.
@@ -60,5 +71,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Milestone v1.2 started — defining requirements
+Stopped at: Roadmap created — ready to plan Phase 6
 Resume file: None
