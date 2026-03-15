@@ -11,13 +11,13 @@ Requirements for AI Chat milestone. Each maps to roadmap phases.
 
 - [ ] **CHAT-01**: User can open/close an AI chat panel via a persistent button on LeetCode problem pages
 - [ ] **CHAT-02**: User can send messages and receive AI responses in a threaded conversation within the panel
-- [ ] **CHAT-03**: AI remembers prior messages in the conversation (multi-turn context sent to OpenRouter)
+- [x] **CHAT-03**: AI remembers prior messages in the conversation (multi-turn context sent to OpenRouter)
 - [ ] **CHAT-04**: AI responses render markdown with code blocks, bold, and bullet lists
 - [ ] **CHAT-05**: User sees loading state while AI responds and error messages on failure
 
 ### Conversation Storage
 
-- [ ] **CONV-01**: Conversations are saved per-problem to IndexedDB and persist across page reloads
+- [x] **CONV-01**: Conversations are saved per-problem to IndexedDB and persist across page reloads
 - [ ] **CONV-02**: User can start a new chat which archives the previous conversation
 - [ ] **CONV-03**: User can browse past conversations for a problem in a history view
 - [ ] **CONV-04**: User can delete individual past conversations
@@ -51,10 +51,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | CHAT-01 | Phase 7 | Pending |
 | CHAT-02 | Phase 7 | Pending |
-| CHAT-03 | Phase 6 | Pending |
+| CHAT-03 | Phase 6 | Complete |
 | CHAT-04 | Phase 7 | Pending |
 | CHAT-05 | Phase 7 | Pending |
-| CONV-01 | Phase 6 | Pending |
+| CONV-01 | Phase 6 | Complete |
 | CONV-02 | Phase 7 | Pending |
 | CONV-03 | Phase 8 | Pending |
 | CONV-04 | Phase 8 | Pending |

@@ -27,7 +27,7 @@
 
 ### v1.2 AI Chat (Phases 6-8)
 
-- [ ] **Phase 6: Conversation Storage and Multi-Turn AI** - IndexedDB conversations store, background chat handlers, multi-turn OpenRouter integration
+- [x] **Phase 6: Conversation Storage and Multi-Turn AI** - IndexedDB conversations store, background chat handlers, multi-turn OpenRouter integration (completed 2026-03-15)
 - [ ] **Phase 7: Chat Panel UI and Integration** - Persistent chat button, Shadow DOM panel, message rendering, wrong submission seeding
 - [ ] **Phase 8: Conversation History** - Popup Chats tab with history browsing and deletion
 
@@ -42,7 +42,7 @@
   2. A conversation record for a problem is created in IndexedDB on the first message and updated on every subsequent exchange — data survives browser restart
   3. The IndexedDB schema migrates from v2 to v3 without data loss when the extension loads alongside existing submissions and cards
   4. CHAT_SEND_MESSAGE, CHAT_LOAD_CONVERSATION, and CHAT_CLEAR_CONVERSATION handlers respond correctly from background.js
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 06-01-PLAN.md — IndexedDB v3 migration, callOpenRouter refactor, and chat message handlers
 
@@ -77,6 +77,6 @@ Plans:
 | 3. Dashboard, Reviews, and Notifications | v1.0 | 3/3 | Complete | 2026-03-13 |
 | 4. API Integration | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 5. Wrong Submission Dialog | v1.1 | 1/1 | Complete | 2026-03-15 |
-| 6. Conversation Storage and Multi-Turn AI | v1.2 | 0/1 | Not started | - |
+| 6. Conversation Storage and Multi-Turn AI | 1/1 | Complete   | 2026-03-15 | - |
 | 7. Chat Panel UI and Integration | v1.2 | 0/? | Not started | - |
 | 8. Conversation History | v1.2 | 0/? | Not started | - |

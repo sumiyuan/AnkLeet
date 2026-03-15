@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: AI Chat
-status: active
-stopped_at: ""
-last_updated: "2026-03-15"
+status: planning
+stopped_at: Completed 06-conversation-storage-multi-turn-ai-01-PLAN.md
+last_updated: "2026-03-15T06:38:12.240Z"
 last_activity: 2026-03-15 — Roadmap created for v1.2 (phases 6-8)
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
 ---
 
 # Project State
@@ -46,6 +45,7 @@ v1.2 Progress: [                    ] 0% (0/3 phases)
 | v1.0 Phases 1-3 | 7 | — | — |
 | Phase 04-api-integration P01 | 1 | 2 | 2 |
 | Phase 05-wrong-submission-dialog P01 | 1 | 2 | 5 |
+| Phase 06-conversation-storage-multi-turn-ai P01 | 2 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -59,6 +59,8 @@ Full decision log in PROJECT.md Key Decisions table.
 - OpenRouter multi-turn via existing callOpenRouter, extended to accept messages[] array; cap at last 10 messages sent to API (context window guard)
 - History view lives in popup Chats tab — reuses existing popup infrastructure
 - Wrong submission seeding routed through background.js — content-toast.js requires no changes
+- [Phase 06-conversation-storage-multi-turn-ai]: callOpenRouter signature changed to messages[] array; callers build messages, buildPrompt() retained for GET_AI_FEEDBACK
+- [Phase 06-conversation-storage-multi-turn-ai]: Conversation helpers getConversation/putConversation/deleteConversation follow getCard/putCard pattern; context capped at last 10 messages with timestamps stripped before API call
 
 ### Pending Todos
 
@@ -70,6 +72,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15
-Stopped at: Roadmap created — ready to plan Phase 6
+Last session: 2026-03-15T06:38:12.237Z
+Stopped at: Completed 06-conversation-storage-multi-turn-ai-01-PLAN.md
 Resume file: None
