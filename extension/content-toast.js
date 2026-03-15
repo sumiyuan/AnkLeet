@@ -183,10 +183,25 @@ function showRatingDialog(titleSlug, title) {
 
       chrome.runtime.sendMessage(
         { type: 'RATE_REVIEW', payload: { titleSlug: titleSlug, rating: rating } },
-        function () {
-          // Show brief confirmation then dismiss
-          promptEl.textContent = 'Rated ' + rating + '!';
-          setTimeout(function () { host.remove(); }, 600);
+        function (response) {
+          // Dismiss the rating dialog immediately
+          host.remove();
+
+          // Show a small confirmation toast in the bottom-right
+          var nextDateLabel = '';
+          if (response && response.nextDue) {
+            var dueDate = new Date(response.nextDue);
+            var now = new Date();
+            var todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            var dueStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+            var diffDays = Math.round((dueStart - todayStart) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 1) {
+              nextDateLabel = 'tomorrow';
+            } else {
+              nextDateLabel = dueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            }
+          }
+          showConfirmationToast(nextDateLabel);
         }
       );
     });
@@ -214,6 +229,102 @@ function showRatingDialog(titleSlug, title) {
   overlay.addEventListener('click', function (e) {
     if (e.target === overlay) host.remove();
   });
+}
+
+/**
+ * Shows a small confirmation toast in the bottom-right corner
+ * after a successful rating. Auto-dismisses after ~2.5 seconds.
+ */
+function showConfirmationToast(nextDateLabel) {
+  var toastHost = document.createElement('div');
+  toastHost.id = 'leetreminder-confirm-host';
+  document.body.appendChild(toastHost);
+
+  var shadow = toastHost.attachShadow({ mode: 'closed' });
+
+  var style = document.createElement('style');
+  style.textContent = `
+    .confirm-toast {
+      all: initial;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #282828;
+      color: #e0e0e0;
+      padding: 14px 20px;
+      border-radius: 10px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      z-index: 2147483647;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      box-sizing: border-box;
+    }
+    .confirm-toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .confirm-toast.fade {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    .check {
+      color: #4caf50;
+      font-size: 20px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .label {
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .next-date {
+      color: #888;
+      font-size: 13px;
+      margin-left: 2px;
+    }
+  `;
+
+  var toast = document.createElement('div');
+  toast.className = 'confirm-toast';
+
+  var check = document.createElement('span');
+  check.className = 'check';
+  check.textContent = '\u2713';
+
+  var label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = 'Review captured';
+
+  toast.appendChild(check);
+  toast.appendChild(label);
+
+  if (nextDateLabel) {
+    var dateSpan = document.createElement('span');
+    dateSpan.className = 'next-date';
+    dateSpan.textContent = '\u00b7 Next: ' + nextDateLabel;
+    toast.appendChild(dateSpan);
+  }
+
+  shadow.appendChild(style);
+  shadow.appendChild(toast);
+
+  // Trigger enter animation
+  requestAnimationFrame(function () {
+    toast.classList.add('show');
+  });
+
+  setTimeout(function () {
+    toast.classList.add('fade');
+    toast.classList.remove('show');
+    setTimeout(function () { toastHost.remove(); }, 300);
+  }, 5000);
 }
 
 /**

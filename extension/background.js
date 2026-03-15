@@ -42,7 +42,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await rateReview(db, message.payload.titleSlug, message.payload.rating);
         // Update badge immediately after rating so count reflects the new state
         getDueToday(db).then(cards => updateBadge(cards.length)).catch(() => {});
-        sendResponse({ ok: true });
+        // Fetch updated card to return the next review date
+        const updatedCard = await getCard(db, message.payload.titleSlug);
+        sendResponse({ ok: true, nextDue: updatedCard ? updatedCard.due : null });
       } catch (err) {
         sendResponse({ error: err.message });
       }
@@ -437,13 +439,12 @@ async function saveSubmission(data, tabId) {
 }
 
 /**
- * Creates an FSRS card for a problem if one does not already exist.
- * Called after the first Accepted submission for a titleSlug.
- * Idempotent — safe to call multiple times for the same titleSlug.
+ * Creates or resets an FSRS card for a problem.
+ * On repeated accepted submissions, resets the schedule so the
+ * latest attempt drives the review cadence. Preserves createdAt.
  */
 async function maybeCreateCard(database, titleSlug) {
   const existing = await getCard(database, titleSlug);
-  if (existing) return; // already has a card — skip
 
   const emptyCard = createEmptyCard(new Date());
   const card = {
@@ -457,18 +458,19 @@ async function maybeCreateCard(database, titleSlug) {
     lapses: emptyCard.lapses,
     state: emptyCard.state,
     last_review: null,
-    createdAt: Date.now()
+    createdAt: existing ? existing.createdAt : Date.now()
   };
 
   return new Promise((resolve, reject) => {
     const tx = database.transaction(['cards'], 'readwrite');
     const store = tx.objectStore('cards');
-    const req = store.add(card);
+    // put() overwrites if card exists, so the latest attempt resets the schedule
+    const req = store.put(card);
     req.onsuccess = () => resolve(req.result);
     req.onerror = (e) => {
       if (e.target.error.name === 'ConstraintError') {
         e.preventDefault();
-        resolve(null); // race condition — another context already created the card
+        resolve(null);
       } else {
         reject(e.target.error);
       }
