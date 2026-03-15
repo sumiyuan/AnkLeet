@@ -349,11 +349,261 @@ function maybeBlurEditor() {
 
 maybeBlurEditor();
 
+/**
+ * Minimal safe markdown renderer — splits on triple-backtick code fences.
+ * All text is set via textContent to prevent XSS with API-sourced content.
+ */
+function renderFeedback(container, text) {
+  container.innerHTML = '';
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  for (const part of parts) {
+    if (part.startsWith('```')) {
+      // Code fence: strip opening line (language tag) and closing fence
+      const body = part.replace(/^```[^\n]*\n?/, '').replace(/```$/, '');
+      const pre = document.createElement('pre');
+      pre.textContent = body;
+      container.appendChild(pre);
+    } else if (part.trim()) {
+      const p = document.createElement('p');
+      p.textContent = part;
+      container.appendChild(p);
+    }
+  }
+}
+
+/**
+ * Renders an inline error message into the given container.
+ */
+function renderError(container, message) {
+  container.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'error-msg';
+  div.textContent = message;
+  container.appendChild(div);
+}
+
+/**
+ * Shows a persistent dialog after a wrong LeetCode submission.
+ * Provides Hint and Full Solution buttons that call GET_AI_FEEDBACK.
+ */
+function showWrongSubmissionDialog(submissionId, titleSlug, title) {
+  removeHost();
+
+  const host = document.createElement('div');
+  host.id = 'leetreminder-toast-host';
+  document.body.appendChild(host);
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+
+  const style = document.createElement('style');
+  style.textContent = `
+    .overlay {
+      all: initial;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 2147483647;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .dialog {
+      background: #282828;
+      color: #e0e0e0;
+      border-radius: 12px;
+      padding: 24px 28px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      text-align: center;
+    }
+    .dialog-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #e05c5c;
+    }
+    .dialog-problem {
+      font-size: 13px;
+      color: #a0a0a0;
+      margin-bottom: 18px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ai-buttons {
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    .ai-btn {
+      all: initial;
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      color: #fff;
+      box-sizing: border-box;
+    }
+    .ai-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+    .ai-btn:active { transform: translateY(0); }
+    .ai-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+    .ai-btn.hint { background: #7c6af7; }
+    .ai-btn.full { background: #4caf50; }
+    .loading {
+      display: none;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+    .feedback-area {
+      text-align: left;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+    .feedback-area p {
+      white-space: pre-wrap;
+      line-height: 1.5;
+      margin: 0 0 8px 0;
+      font-size: 13px;
+    }
+    .feedback-area pre {
+      background: #1e1e1e;
+      overflow-x: auto;
+      font-family: 'Fira Mono', 'Consolas', monospace;
+      font-size: 12px;
+      color: #ce9178;
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin: 0 0 8px 0;
+      white-space: pre;
+    }
+    .error-msg {
+      color: #e05c5c;
+      font-size: 13px;
+      text-align: left;
+      margin-bottom: 8px;
+    }
+    .skip-btn {
+      all: initial;
+      display: inline-block;
+      margin-top: 12px;
+      padding: 4px 8px;
+      font-family: system-ui, sans-serif;
+      font-size: 12px;
+      color: #666;
+      cursor: pointer;
+      background: none;
+    }
+    .skip-btn:hover { color: #999; }
+  `;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'dialog';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'dialog-title';
+  titleEl.textContent = 'Wrong Submission';
+
+  const problemEl = document.createElement('div');
+  problemEl.className = 'dialog-problem';
+  const displayTitle = title || titleSlug.replace(/-/g, ' ');
+  problemEl.textContent = displayTitle;
+
+  const buttonsEl = document.createElement('div');
+  buttonsEl.className = 'ai-buttons';
+
+  const hintBtn = document.createElement('button');
+  hintBtn.className = 'ai-btn hint';
+  hintBtn.textContent = 'Hint';
+
+  const fullBtn = document.createElement('button');
+  fullBtn.className = 'ai-btn full';
+  fullBtn.textContent = 'Full Solution';
+
+  buttonsEl.appendChild(hintBtn);
+  buttonsEl.appendChild(fullBtn);
+
+  const loadingEl = document.createElement('div');
+  loadingEl.className = 'loading';
+
+  const feedbackArea = document.createElement('div');
+  feedbackArea.className = 'feedback-area';
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.className = 'skip-btn';
+  dismissBtn.textContent = 'Dismiss';
+  dismissBtn.addEventListener('click', function () {
+    host.remove();
+  });
+
+  dialog.appendChild(titleEl);
+  dialog.appendChild(problemEl);
+  dialog.appendChild(buttonsEl);
+  dialog.appendChild(loadingEl);
+  dialog.appendChild(feedbackArea);
+  dialog.appendChild(dismissBtn);
+  overlay.appendChild(dialog);
+
+  shadow.appendChild(style);
+  shadow.appendChild(overlay);
+
+  function requestFeedback(mode) {
+    hintBtn.disabled = true;
+    fullBtn.disabled = true;
+    loadingEl.style.display = 'block';
+    loadingEl.textContent = mode === 'hint' ? 'Getting hint...' : 'Getting full solution...';
+    feedbackArea.innerHTML = '';
+
+    chrome.runtime.sendMessage(
+      { type: 'GET_AI_FEEDBACK', payload: { submissionId: submissionId, mode: mode } },
+      function (response) {
+        loadingEl.style.display = 'none';
+        if (chrome.runtime.lastError) {
+          hintBtn.disabled = false;
+          fullBtn.disabled = false;
+          renderError(feedbackArea, 'Connection lost');
+          return;
+        }
+        if (!response) {
+          hintBtn.disabled = false;
+          fullBtn.disabled = false;
+          renderError(feedbackArea, 'No response received');
+          return;
+        }
+        if (response.error) {
+          hintBtn.disabled = false;
+          fullBtn.disabled = false;
+          renderError(feedbackArea, response.error);
+          return;
+        }
+        renderFeedback(feedbackArea, response.feedback);
+      }
+    );
+  }
+
+  hintBtn.addEventListener('click', function () { requestFeedback('hint'); });
+  fullBtn.addEventListener('click', function () { requestFeedback('full'); });
+}
+
 // Listen for messages from the service worker.
 chrome.runtime.onMessage.addListener(function (msg) {
   if (msg.type === 'SHOW_TOAST') {
     showToast('\u2713 Submission captured');
   } else if (msg.type === 'SHOW_RATING') {
     showRatingDialog(msg.titleSlug, msg.title);
+  } else if (msg.type === 'SHOW_WRONG_SUBMISSION') {
+    showWrongSubmissionDialog(msg.submissionId, msg.titleSlug, msg.title);
   }
 });
