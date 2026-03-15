@@ -20,30 +20,20 @@ window.addEventListener('message', function (event) {
   // may be starting up when the first message arrives.
   function sendToServiceWorker(attempt) {
     try {
+      // No callback — background returns false (no response expected).
+      // Passing a callback would cause "message port closed" warnings.
       chrome.runtime.sendMessage({
         type: 'SUBMISSION_CAPTURED',
         payload: payload
-      }, function () {
-        if (chrome.runtime.lastError) {
-          // Suppress "could not establish connection" errors that occur
-          // when the service worker is momentarily unavailable.
-          if (attempt === 1) {
-            setTimeout(function () { sendToServiceWorker(2); }, 500);
-          } else {
-            console.warn(
-              '[LeetReminder] content-isolated: sendMessage failed after retry',
-              chrome.runtime.lastError.message
-            );
-          }
-        }
       });
+      // Check lastError synchronously to suppress "could not establish connection"
+      void chrome.runtime.lastError;
     } catch (err) {
-      // sendMessage itself threw (e.g., extension context invalidated).
+      // sendMessage itself threw (e.g., extension context invalidated after reload).
       if (attempt === 1) {
         setTimeout(function () { sendToServiceWorker(2); }, 500);
-      } else {
-        console.warn('[LeetReminder] content-isolated: sendMessage threw', err);
       }
+      // Silently drop after retry — context invalidation is expected after extension reload.
     }
   }
 

@@ -397,129 +397,148 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
 
   const style = document.createElement('style');
   style.textContent = `
-    .overlay {
+    .panel {
       all: initial;
       display: flex;
-      align-items: center;
-      justify-content: center;
+      flex-direction: column;
       position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.4);
-      z-index: 2147483647;
-      font-family: system-ui, -apple-system, sans-serif;
-    }
-    .dialog {
+      bottom: 20px;
+      right: 20px;
+      width: 340px;
+      max-height: 480px;
       background: #282828;
       color: #e0e0e0;
-      border-radius: 12px;
-      padding: 24px 28px;
-      max-width: 480px;
-      width: 90%;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      text-align: center;
+      border-radius: 10px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+      z-index: 2147483647;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow: hidden;
     }
-    .dialog-title {
-      font-size: 15px;
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid #363636;
+    }
+    .panel-title {
+      font-size: 13px;
       font-weight: 600;
-      margin-bottom: 6px;
       color: #e05c5c;
     }
-    .dialog-problem {
-      font-size: 13px;
+    .panel-problem {
+      font-size: 11px;
       color: #a0a0a0;
-      margin-bottom: 18px;
+      max-width: 200px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .close-btn {
+      all: initial;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      color: #666;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .close-btn:hover { color: #999; background: #363636; }
+    .panel-body {
+      padding: 12px 14px;
+      overflow-y: auto;
+      flex: 1;
+    }
     .ai-buttons {
       display: flex;
-      flex-direction: row;
       gap: 8px;
-      justify-content: center;
-      margin-bottom: 12px;
     }
     .ai-btn {
       all: initial;
       display: inline-block;
-      padding: 8px 16px;
+      padding: 7px 14px;
       border-radius: 6px;
       font-family: system-ui, sans-serif;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s;
+      transition: opacity 0.15s;
       color: #fff;
       box-sizing: border-box;
     }
-    .ai-btn:hover { opacity: 0.85; transform: translateY(-1px); }
-    .ai-btn:active { transform: translateY(0); }
-    .ai-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+    .ai-btn:hover:not(:disabled) { opacity: 0.85; }
+    .ai-btn:disabled { opacity: 0.4; cursor: default; }
     .ai-btn.hint { background: #7c6af7; }
     .ai-btn.full { background: #4caf50; }
     .loading {
       display: none;
-      font-size: 13px;
+      font-size: 12px;
       color: #888;
-      margin-bottom: 10px;
+      margin-top: 10px;
     }
     .feedback-area {
       text-align: left;
-      max-height: 300px;
-      overflow-y: auto;
-      margin-bottom: 10px;
+      margin-top: 10px;
     }
     .feedback-area p {
       white-space: pre-wrap;
       line-height: 1.5;
       margin: 0 0 8px 0;
-      font-size: 13px;
+      font-size: 12px;
+      color: #d0d0d0;
     }
     .feedback-area pre {
       background: #1e1e1e;
       overflow-x: auto;
       font-family: 'Fira Mono', 'Consolas', monospace;
-      font-size: 12px;
+      font-size: 11px;
       color: #ce9178;
-      padding: 10px 12px;
+      padding: 8px 10px;
       border-radius: 6px;
       margin: 0 0 8px 0;
       white-space: pre;
     }
     .error-msg {
       color: #e05c5c;
-      font-size: 13px;
-      text-align: left;
-      margin-bottom: 8px;
-    }
-    .skip-btn {
-      all: initial;
-      display: inline-block;
-      margin-top: 12px;
-      padding: 4px 8px;
-      font-family: system-ui, sans-serif;
       font-size: 12px;
-      color: #666;
-      cursor: pointer;
-      background: none;
+      text-align: left;
+      margin-top: 10px;
     }
-    .skip-btn:hover { color: #999; }
   `;
 
-  const overlay = document.createElement('div');
-  overlay.className = 'overlay';
+  const panel = document.createElement('div');
+  panel.className = 'panel';
 
-  const dialog = document.createElement('div');
-  dialog.className = 'dialog';
+  // Header
+  const header = document.createElement('div');
+  header.className = 'panel-header';
 
+  const headerLeft = document.createElement('div');
   const titleEl = document.createElement('div');
-  titleEl.className = 'dialog-title';
+  titleEl.className = 'panel-title';
   titleEl.textContent = 'Wrong Submission';
-
   const problemEl = document.createElement('div');
-  problemEl.className = 'dialog-problem';
-  const displayTitle = title || titleSlug.replace(/-/g, ' ');
-  problemEl.textContent = displayTitle;
+  problemEl.className = 'panel-problem';
+  problemEl.textContent = title || titleSlug.replace(/-/g, ' ');
+  headerLeft.appendChild(titleEl);
+  headerLeft.appendChild(problemEl);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'close-btn';
+  closeBtn.textContent = '\u00d7';
+  closeBtn.addEventListener('click', function () { host.remove(); });
+
+  header.appendChild(headerLeft);
+  header.appendChild(closeBtn);
+
+  // Body
+  const body = document.createElement('div');
+  body.className = 'panel-body';
 
   const buttonsEl = document.createElement('div');
   buttonsEl.className = 'ai-buttons';
@@ -541,23 +560,15 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
   const feedbackArea = document.createElement('div');
   feedbackArea.className = 'feedback-area';
 
-  const dismissBtn = document.createElement('button');
-  dismissBtn.className = 'skip-btn';
-  dismissBtn.textContent = 'Dismiss';
-  dismissBtn.addEventListener('click', function () {
-    host.remove();
-  });
+  body.appendChild(buttonsEl);
+  body.appendChild(loadingEl);
+  body.appendChild(feedbackArea);
 
-  dialog.appendChild(titleEl);
-  dialog.appendChild(problemEl);
-  dialog.appendChild(buttonsEl);
-  dialog.appendChild(loadingEl);
-  dialog.appendChild(feedbackArea);
-  dialog.appendChild(dismissBtn);
-  overlay.appendChild(dialog);
+  panel.appendChild(header);
+  panel.appendChild(body);
 
   shadow.appendChild(style);
-  shadow.appendChild(overlay);
+  shadow.appendChild(panel);
 
   function requestFeedback(mode) {
     hintBtn.disabled = true;

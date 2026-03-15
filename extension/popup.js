@@ -280,10 +280,12 @@ function loadSettings() {
   chrome.storage.local.get('settings', result => {
     const s = result.settings || {};
     const apiKeyEl = document.getElementById('api-key');
+    const aiModelEl = document.getElementById('ai-model');
     const notifEnabledEl = document.getElementById('notif-enabled');
     const notifTimeEl = document.getElementById('notif-time');
 
     if (apiKeyEl) apiKeyEl.value = s.openRouterApiKey || '';
+    if (aiModelEl) aiModelEl.value = s.aiModel || 'anthropic/claude-haiku-4.5';
     if (notifEnabledEl) notifEnabledEl.checked = (s.notificationsEnabled !== false); // default true
     if (notifTimeEl) notifTimeEl.value = s.notificationTime || '09:00';
   });
@@ -296,12 +298,14 @@ function saveSettings() {
   chrome.storage.local.get('settings', result => {
     const existing = result.settings || {};
     const apiKeyEl = document.getElementById('api-key');
+    const aiModelEl = document.getElementById('ai-model');
     const notifEnabledEl = document.getElementById('notif-enabled');
     const notifTimeEl = document.getElementById('notif-time');
 
     const merged = {
       ...existing,
       openRouterApiKey: (apiKeyEl ? apiKeyEl.value.trim() : (existing.openRouterApiKey || '')),
+      aiModel: (aiModelEl ? aiModelEl.value : (existing.aiModel || 'anthropic/claude-haiku-4.5')),
       notificationsEnabled: notifEnabledEl ? notifEnabledEl.checked : (existing.notificationsEnabled !== false),
       notificationTime: (notifTimeEl ? notifTimeEl.value : (existing.notificationTime || '09:00'))
     };
