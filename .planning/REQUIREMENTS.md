@@ -9,10 +9,10 @@ Requirements for AI feedback feature. Each maps to roadmap phases.
 
 ### AI Feedback
 
-- [ ] **AIFB-01**: User sees a popup with "Hint" and "Full Solution" buttons when a wrong submission is detected
-- [ ] **AIFB-02**: User receives a hint that nudges toward the solution without revealing the answer
-- [ ] **AIFB-03**: User receives a full solution with explanation and code
-- [ ] **AIFB-04**: AI response is displayed inline in the popup on the LeetCode page
+- [x] **AIFB-01**: User sees a popup with "Hint" and "Full Solution" buttons when a wrong submission is detected
+- [x] **AIFB-02**: User receives a hint that nudges toward the solution without revealing the answer
+- [x] **AIFB-03**: User receives a full solution with explanation and code
+- [x] **AIFB-04**: AI response is displayed inline in the popup on the LeetCode page
 
 ### API Integration
 
@@ -40,10 +40,10 @@ Requirements for AI feedback feature. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AIFB-01 | Phase 5 | Pending |
-| AIFB-02 | Phase 5 | Pending |
-| AIFB-03 | Phase 5 | Pending |
-| AIFB-04 | Phase 5 | Pending |
+| AIFB-01 | Phase 5 | Complete |
+| AIFB-02 | Phase 5 | Complete |
+| AIFB-03 | Phase 5 | Complete |
+| AIFB-04 | Phase 5 | Complete |
 | API-01 | Phase 4 | Complete |
 | API-02 | Phase 4 | Complete |
 | API-03 | Phase 4 | Complete |

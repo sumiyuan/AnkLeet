@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: AI Feedback
 status: planning
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-03-14T04:30:30.874Z"
+stopped_at: "Checkpoint: human-verify 05-01 wrong submission dialog"
+last_updated: "2026-03-15T05:00:00.622Z"
 last_activity: 2026-03-13 — Roadmap created for v1.1
 progress:
   total_phases: 2
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
   percent: 0
 ---
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 04-api-integration P01 | 12 | 2 tasks | 2 files |
+| Phase 05-wrong-submission-dialog P01 | 1 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,8 @@ Recent decisions affecting current work:
 - [Phase 04-api-integration]: OpenRouter API via plain fetch() with Bearer auth from MV3 service worker — no SDK needed for single POST endpoint
 - [Phase 04-api-integration]: SHOW_WRONG_SUBMISSION carries submissionId (not titleSlug) to avoid race condition on repeated submissions
 - [Phase 04-api-integration]: API key read inside service worker only — never forwarded in sendMessage/sendResponse payloads
+- [Phase 05-wrong-submission-dialog]: No backdrop click dismiss on wrong submission dialog — user must use Dismiss button to prevent accidental closure while reading AI response
+- [Phase 05-wrong-submission-dialog]: max-width 480px for wrong submission dialog (vs 360px for rating dialog) — wider layout for code block readability
 
 ### Pending Todos
 
@@ -73,6 +76,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-14T04:28:31.716Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-03-15T05:00:00.620Z
+Stopped at: Checkpoint: human-verify 05-01 wrong submission dialog
 Resume file: None
