@@ -32,6 +32,11 @@
       "matches": ["https://leetcode.com/problems/*"],
       "js": ["content-toast.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content-chat.js"],
+      "run_at": "document_end"
     }
   ],
   "icons": {
