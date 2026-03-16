@@ -78,5 +78,5 @@ Plans:
 | 4. API Integration | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 5. Wrong Submission Dialog | v1.1 | 1/1 | Complete | 2026-03-15 |
 | 6. Conversation Storage and Multi-Turn AI | 1/1 | Complete   | 2026-03-15 | - |
-| 7. Chat Panel UI and Integration | v1.2 | 0/? | Not started | - |
+| 7. Chat Panel UI and Integration | 1/2 | In Progress|  | - |
 | 8. Conversation History | v1.2 | 0/? | Not started | - |

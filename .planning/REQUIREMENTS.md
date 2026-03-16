@@ -9,16 +9,16 @@ Requirements for AI Chat milestone. Each maps to roadmap phases.
 
 ### Chat Panel
 
-- [ ] **CHAT-01**: User can open/close an AI chat panel via a persistent button on LeetCode problem pages
-- [ ] **CHAT-02**: User can send messages and receive AI responses in a threaded conversation within the panel
+- [x] **CHAT-01**: User can open/close an AI chat panel via a persistent button on LeetCode problem pages
+- [x] **CHAT-02**: User can send messages and receive AI responses in a threaded conversation within the panel
 - [x] **CHAT-03**: AI remembers prior messages in the conversation (multi-turn context sent to OpenRouter)
-- [ ] **CHAT-04**: AI responses render markdown with code blocks, bold, and bullet lists
-- [ ] **CHAT-05**: User sees loading state while AI responds and error messages on failure
+- [x] **CHAT-04**: AI responses render markdown with code blocks, bold, and bullet lists
+- [x] **CHAT-05**: User sees loading state while AI responds and error messages on failure
 
 ### Conversation Storage
 
 - [x] **CONV-01**: Conversations are saved per-problem to IndexedDB and persist across page reloads
-- [ ] **CONV-02**: User can start a new chat which archives the previous conversation
+- [x] **CONV-02**: User can start a new chat which archives the previous conversation
 - [ ] **CONV-03**: User can browse past conversations for a problem in a history view
 - [ ] **CONV-04**: User can delete individual past conversations
 - [ ] **CONV-05**: Hints/solutions from the wrong-submission panel are saved as the opening message of the chat conversation
@@ -49,13 +49,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CHAT-01 | Phase 7 | Pending |
-| CHAT-02 | Phase 7 | Pending |
+| CHAT-01 | Phase 7 | Complete |
+| CHAT-02 | Phase 7 | Complete |
 | CHAT-03 | Phase 6 | Complete |
-| CHAT-04 | Phase 7 | Pending |
-| CHAT-05 | Phase 7 | Pending |
+| CHAT-04 | Phase 7 | Complete |
+| CHAT-05 | Phase 7 | Complete |
 | CONV-01 | Phase 6 | Complete |
-| CONV-02 | Phase 7 | Pending |
+| CONV-02 | Phase 7 | Complete |
 | CONV-03 | Phase 8 | Pending |
 | CONV-04 | Phase 8 | Pending |
 | CONV-05 | Phase 7 | Pending |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: AI Chat
 status: planning
-stopped_at: Completed 06-conversation-storage-multi-turn-ai-01-PLAN.md
-last_updated: "2026-03-15T06:40:55.159Z"
+stopped_at: Completed 07-chat-panel-ui-and-integration-01-PLAN.md
+last_updated: "2026-03-16T02:02:56.784Z"
 last_activity: 2026-03-15 — Roadmap created for v1.2 (phases 6-8)
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_plans: 3
+  completed_plans: 2
 ---
 
 # Project State
@@ -46,6 +46,7 @@ v1.2 Progress: [                    ] 0% (0/3 phases)
 | Phase 04-api-integration P01 | 1 | 2 | 2 |
 | Phase 05-wrong-submission-dialog P01 | 1 | 2 | 5 |
 | Phase 06-conversation-storage-multi-turn-ai P01 | 2 | 2 tasks | 1 files |
+| Phase 07-chat-panel-ui-and-integration P01 | 2 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -61,6 +62,7 @@ Full decision log in PROJECT.md Key Decisions table.
 - Wrong submission seeding routed through background.js — content-toast.js requires no changes
 - [Phase 06-conversation-storage-multi-turn-ai]: callOpenRouter signature changed to messages[] array; callers build messages, buildPrompt() retained for GET_AI_FEEDBACK
 - [Phase 06-conversation-storage-multi-turn-ai]: Conversation helpers getConversation/putConversation/deleteConversation follow getCard/putCard pattern; context capped at last 10 messages with timestamps stripped before API call
+- [Phase 07-chat-panel-ui-and-integration]: reloadConversation named explicitly for Plan 02 SHOW_CHAT_SEED contract; SHOW_CHAT_SEED listener stubbed in Plan 01 so Plan 02 only needs background.js changes
 
 ### Pending Todos
 
@@ -72,6 +74,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T06:38:12.237Z
-Stopped at: Completed 06-conversation-storage-multi-turn-ai-01-PLAN.md
+Last session: 2026-03-16T02:02:50.221Z
+Stopped at: Completed 07-chat-panel-ui-and-integration-01-PLAN.md
 Resume file: None
