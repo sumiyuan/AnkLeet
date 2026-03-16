@@ -86,4 +86,24 @@
       return response;
     });
   };
+  // --- Editor code extraction (for chat panel) ---
+  // content-chat.js (ISOLATED world) requests the current Monaco editor code
+  // via postMessage; we respond from MAIN world where monaco API is accessible.
+
+  window.addEventListener('message', function (event) {
+    if (event.data && event.data.source === 'leetreminder' && event.data.type === 'request-code') {
+      var code = '';
+      try {
+        var models = window.monaco && window.monaco.editor && window.monaco.editor.getModels();
+        if (models && models.length) code = models[0].getValue();
+      } catch (e) {}
+      window.postMessage({
+        source: 'leetreminder',
+        type: 'editor-code',
+        reqId: event.data.reqId,
+        code: code
+      }, '*');
+    }
+  });
+
 })();

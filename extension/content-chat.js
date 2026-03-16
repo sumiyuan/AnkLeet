@@ -31,6 +31,42 @@
     return location.pathname.split('/')[2] || '';
   }
 
+  /**
+   * Extracts the user's current code from LeetCode's Monaco editor.
+   * Sends a postMessage to content-main.js (MAIN world) which has access
+   * to the monaco.editor API, and receives the code back via postMessage.
+   */
+  function extractEditorCode() {
+    return new Promise(function (resolve) {
+      var reqId = 'lr-code-' + Date.now();
+      var resolved = false;
+
+      function handler(event) {
+        if (event.data && event.data.source === 'leetreminder' &&
+            event.data.type === 'editor-code' && event.data.reqId === reqId) {
+          resolved = true;
+          window.removeEventListener('message', handler);
+          resolve(event.data.code || '');
+        }
+      }
+      window.addEventListener('message', handler);
+
+      window.postMessage({
+        source: 'leetreminder',
+        type: 'request-code',
+        reqId: reqId
+      }, '*');
+
+      // Timeout fallback — resolve empty if Monaco not available
+      setTimeout(function () {
+        if (!resolved) {
+          window.removeEventListener('message', handler);
+          resolve('');
+        }
+      }, 300);
+    });
+  }
+
   function formatProblemName(slug) {
     return slug
       .split('-')
@@ -584,29 +620,32 @@
     clearError();
     sendBtn.disabled = true;
 
-    chrome.runtime.sendMessage(
-      { type: 'CHAT_SEND_MESSAGE', payload: { titleSlug: currentTitleSlug, content } },
-      function (response) {
-        hideLoading();
-        sendBtn.disabled = false;
+    // Extract current editor code, then send message with code context
+    extractEditorCode().then(function (userCode) {
+      chrome.runtime.sendMessage(
+        { type: 'CHAT_SEND_MESSAGE', payload: { titleSlug: currentTitleSlug, content, userCode } },
+        function (response) {
+          hideLoading();
+          sendBtn.disabled = false;
 
-        if (chrome.runtime.lastError) {
-          showError('Connection lost — ' + (chrome.runtime.lastError.message || 'try again'));
-          return;
-        }
-        if (!response) {
-          showError('No response received');
-          return;
-        }
-        if (response.error) {
-          showError(response.error);
-          return;
-        }
+          if (chrome.runtime.lastError) {
+            showError('Connection lost — ' + (chrome.runtime.lastError.message || 'try again'));
+            return;
+          }
+          if (!response) {
+            showError('No response received');
+            return;
+          }
+          if (response.error) {
+            showError(response.error);
+            return;
+          }
 
-        clearError();
-        appendMessageBubble('assistant', response.reply);
-      }
-    );
+          clearError();
+          appendMessageBubble('assistant', response.reply);
+        }
+      );
+    });
   }
 
   // --- Message bubble ---

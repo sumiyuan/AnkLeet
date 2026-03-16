@@ -494,6 +494,41 @@ function renderError(container, message) {
 }
 
 /**
+ * Extracts the user's current code from LeetCode's Monaco editor.
+ * Sends a postMessage to content-main.js (MAIN world) which has access
+ * to the monaco.editor API, and receives the code back via postMessage.
+ */
+function extractEditorCode() {
+  return new Promise(function (resolve) {
+    var reqId = 'lr-code-' + Date.now();
+    var resolved = false;
+
+    function handler(event) {
+      if (event.data && event.data.source === 'leetreminder' &&
+          event.data.type === 'editor-code' && event.data.reqId === reqId) {
+        resolved = true;
+        window.removeEventListener('message', handler);
+        resolve(event.data.code || '');
+      }
+    }
+    window.addEventListener('message', handler);
+
+    window.postMessage({
+      source: 'leetreminder',
+      type: 'request-code',
+      reqId: reqId
+    }, '*');
+
+    setTimeout(function () {
+      if (!resolved) {
+        window.removeEventListener('message', handler);
+        resolve('');
+      }
+    }, 300);
+  });
+}
+
+/**
  * Shows a persistent dialog after a wrong LeetCode submission.
  * Provides Hint and Full Solution buttons that call GET_AI_FEEDBACK.
  */
@@ -688,31 +723,34 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
     loadingEl.textContent = mode === 'hint' ? 'Getting hint...' : 'Getting full solution...';
     feedbackArea.innerHTML = '';
 
-    chrome.runtime.sendMessage(
-      { type: 'GET_AI_FEEDBACK', payload: { submissionId: submissionId, mode: mode } },
-      function (response) {
-        loadingEl.style.display = 'none';
-        if (chrome.runtime.lastError) {
-          hintBtn.disabled = false;
-          fullBtn.disabled = false;
-          renderError(feedbackArea, 'Connection lost');
-          return;
+    // Extract current editor code via content-main.js (MAIN world), then send feedback request
+    extractEditorCode().then(function (userCode) {
+      chrome.runtime.sendMessage(
+        { type: 'GET_AI_FEEDBACK', payload: { submissionId: submissionId, mode: mode, userCode: userCode } },
+        function (response) {
+          loadingEl.style.display = 'none';
+          if (chrome.runtime.lastError) {
+            hintBtn.disabled = false;
+            fullBtn.disabled = false;
+            renderError(feedbackArea, 'Connection lost');
+            return;
+          }
+          if (!response) {
+            hintBtn.disabled = false;
+            fullBtn.disabled = false;
+            renderError(feedbackArea, 'No response received');
+            return;
+          }
+          if (response.error) {
+            hintBtn.disabled = false;
+            fullBtn.disabled = false;
+            renderError(feedbackArea, response.error);
+            return;
+          }
+          renderFeedback(feedbackArea, response.feedback);
         }
-        if (!response) {
-          hintBtn.disabled = false;
-          fullBtn.disabled = false;
-          renderError(feedbackArea, 'No response received');
-          return;
-        }
-        if (response.error) {
-          hintBtn.disabled = false;
-          fullBtn.disabled = false;
-          renderError(feedbackArea, response.error);
-          return;
-        }
-        renderFeedback(feedbackArea, response.feedback);
-      }
-    );
+      );
+    });
   }
 
   hintBtn.addEventListener('click', function () { requestFeedback('hint'); });

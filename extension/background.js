@@ -136,7 +136,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const keepAlive = setInterval(() => chrome.storage.local.get('_ping'), 20_000);
 
       try {
-        const feedback = await callOpenRouter(apiKey, model, [{ role: 'user', content: buildPrompt(submission, message.payload.mode) }]);
+        const feedback = await callOpenRouter(apiKey, model, [{ role: 'user', content: buildPrompt(submission, message.payload.mode, message.payload.userCode) }]);
         sendResponse({ feedback });
 
         // Seed hint/solution into chat conversation so it appears as opening message.
@@ -178,7 +178,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ error: 'Failed to open database' }); return;
         }
       }
-      const { titleSlug, content } = message.payload;
+      const { titleSlug, content, userCode } = message.payload;
 
       const { settings } = await chrome.storage.local.get('settings');
       const apiKey = settings?.openRouterApiKey;
@@ -204,8 +204,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       conversation.messages.push({ role: 'user', content, timestamp: now });
       conversation.updatedAt = now;
 
-      // Cap context sent to API at last 10 messages; strip timestamps (OpenRouter only accepts role+content)
-      const messagesToSend = conversation.messages.slice(-10).map(m => ({ role: m.role, content: m.content }));
+      // Build messages for API: always lead with system prompt + code context, then recent history
+      const systemPrompt = { role: 'system', content: buildSystemPrompt(titleSlug).content };
+      const nonSystemMessages = conversation.messages.filter(m => m.role !== 'system');
+      const recentMessages = nonSystemMessages.slice(-10).map(m => ({ role: m.role, content: m.content }));
+
+      const messagesToSend = [systemPrompt];
+      if (userCode) {
+        messagesToSend.push({
+          role: 'system',
+          content: 'The user\'s current code in the editor:\n```\n' + userCode + '\n```'
+        });
+      }
+      messagesToSend.push(...recentMessages);
 
       const keepAlive = setInterval(() => chrome.storage.local.get('_ping'), 20_000);
       try {
@@ -692,12 +703,12 @@ function buildSystemPrompt(titleSlug) {
  * mode: 'full' — Complete solution with explanation and working code.
  * Includes a prompt injection guard.
  */
-function buildPrompt(submission, mode) {
+function buildPrompt(submission, mode, userCode) {
   const modeInstruction = mode === 'hint'
     ? 'Give a Socratic hint that nudges toward the solution WITHOUT revealing the algorithm name or showing any code. Ask a guiding question.'
     : 'Provide a complete solution with explanation and working code.';
 
-  const code = submission.code || 'Code not available — please review your submission on LeetCode.';
+  const code = submission.code || userCode || 'Code not available — please review your submission on LeetCode.';
 
   return `You are a coding assistant reviewing a LeetCode submission.
 Problem: ${submission.titleSlug}
