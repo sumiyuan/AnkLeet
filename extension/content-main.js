@@ -1,4 +1,4 @@
-// LeetReminder — Network Interceptor (content-main.js)
+// AnkLeet — Network Interceptor (content-main.js)
 // World: MAIN — same JS context as LeetCode's page scripts.
 // document_start — overrides fetch/XHR before page scripts load.
 //
@@ -15,7 +15,7 @@
 
   function postSubmission(data) {
     window.postMessage({
-      source: 'leetreminder',
+      source: 'ankleet',
       type: 'submission',
       data: data
     }, '*');
@@ -91,14 +91,14 @@
   // via postMessage; we respond from MAIN world where monaco API is accessible.
 
   window.addEventListener('message', function (event) {
-    if (event.data && event.data.source === 'leetreminder' && event.data.type === 'request-code') {
+    if (event.data && event.data.source === 'ankleet' && event.data.type === 'request-code') {
       var code = '';
       try {
         var models = window.monaco && window.monaco.editor && window.monaco.editor.getModels();
         if (models && models.length) code = models[0].getValue();
       } catch (e) {}
       window.postMessage({
-        source: 'leetreminder',
+        source: 'ankleet',
         type: 'editor-code',
         reqId: event.data.reqId,
         code: code

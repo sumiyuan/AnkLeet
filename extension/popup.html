@@ -3,29 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LeetReminder</title>
+  <title>AnkLeet</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="reviews">Reviews</button>
-    <button class="tab-btn" data-tab="settings">&#9881; Settings</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
   </div>
 
   <div id="tab-dashboard" class="tab-panel active">
     <div class="stats-bar">
       <div class="stat-item">
-        <span class="stat-value" id="stat-retention">—</span>
+        <span class="stat-value" id="stat-retention">&mdash;</span>
         <span class="stat-label">Retention</span>
       </div>
       <div class="stat-item">
-        <span class="stat-value" id="stat-reviews">—</span>
+        <span class="stat-value" id="stat-reviews">&mdash;</span>
         <span class="stat-label">Reviews</span>
       </div>
       <div class="stat-item">
-        <span class="stat-value" id="stat-streak">—</span>
+        <span class="stat-value" id="stat-streak">&mdash;</span>
         <span class="stat-label">Streak</span>
+      </div>
+    </div>
+    <div class="activity-grid-section">
+      <div class="activity-grid-header">
+        <span class="activity-grid-title">Last 14 Days</span>
+        <span class="activity-grid-total" id="grid-total"></span>
+      </div>
+      <div class="activity-grid" id="activity-grid"></div>
+      <div class="activity-grid-labels" id="grid-labels"></div>
+      <div class="activity-grid-legend">
+        <span class="legend-label">Less</span>
+        <span class="legend-cell" data-level="0"></span>
+        <span class="legend-cell" data-level="1"></span>
+        <span class="legend-cell" data-level="2"></span>
+        <span class="legend-cell" data-level="3"></span>
+        <span class="legend-cell" data-level="4"></span>
+        <span class="legend-label">More</span>
       </div>
     </div>
     <div class="section-header">Today's Activity</div>
@@ -77,6 +95,17 @@
 
       <button id="save-settings" class="save-btn">Save Settings</button>
       <span id="save-status" class="save-status"></span>
+
+      <div class="data-section">
+        <div class="data-section-title">Data Transfer</div>
+        <p class="data-section-desc">Export your data to transfer between browsers. Includes problem history, review schedule, and conversations.</p>
+        <div class="data-buttons">
+          <button id="export-data" class="data-btn export-btn">Export Data</button>
+          <button id="import-data" class="data-btn import-btn">Import Data</button>
+        </div>
+        <input type="file" id="import-file" accept=".json" style="display:none">
+        <span id="data-status" class="save-status"></span>
+      </div>
     </div>
   </div>
 

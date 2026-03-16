@@ -1,4 +1,4 @@
-// LeetReminder — Service Worker (background.js)
+// AnkLeet — Service Worker (background.js)
 // ALL event listeners MUST be registered at the top level (global scope).
 // Never register listeners inside callbacks or async functions.
 
@@ -8,7 +8,7 @@ const { createEmptyCard, fsrs, Rating, State } = FSRS;
 
 // Module-scope DB reference — persists for the lifetime of this worker instance.
 let db = null;
-openDatabase().then(database => {
+migrateFromOldDb().then(() => openDatabase()).then(database => {
   db = database;
   db.onversionchange = () => db.close();
   // Update badge immediately on worker startup — no gap until first alarm tick
@@ -105,6 +105,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true; // async response
+  }
+
+  if (message.type === 'GET_RECENT_ACTIVITY') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' }); return;
+        }
+      }
+      try {
+        const days = message.payload?.days || 14;
+        const start = new Date();
+        start.setDate(start.getDate() - (days - 1));
+        start.setHours(0, 0, 0, 0);
+        const range = IDBKeyRange.lowerBound(start.getTime());
+        const submissions = await new Promise((resolve, reject) => {
+          const tx = db.transaction(['submissions'], 'readonly');
+          const idx = tx.objectStore('submissions').index('capturedAt');
+          const req = idx.getAll(range);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = (e) => reject(e.target.error);
+        });
+        // Aggregate by calendar day
+        const counts = {};
+        for (const sub of submissions) {
+          const day = new Date(sub.capturedAt).toISOString().slice(0, 10);
+          counts[day] = (counts[day] || 0) + 1;
+        }
+        sendResponse({ counts });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true;
   }
 
   if (message.type === 'GET_AI_FEEDBACK') {
@@ -251,6 +285,86 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // keep message channel open for async response
   }
 
+  if (message.type === 'EXPORT_DATA') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' }); return;
+        }
+      }
+      try {
+        const [submissions, cards, reviewLogs, conversations] = await Promise.all([
+          getAllFromStore(db, 'submissions'),
+          getAllFromStore(db, 'cards'),
+          getAllFromStore(db, 'reviewLogs'),
+          getAllFromStore(db, 'conversations')
+        ]);
+        const { settings } = await chrome.storage.local.get('settings');
+        sendResponse({
+          data: {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            submissions,
+            cards,
+            reviewLogs,
+            conversations,
+            settings: settings || {}
+          }
+        });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'IMPORT_DATA') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' }); return;
+        }
+      }
+      try {
+        const imported = message.payload;
+        if (!imported || !imported.version) {
+          sendResponse({ error: 'Invalid export file format' }); return;
+        }
+
+        // Clear and repopulate all stores in a single transaction
+        const tx = db.transaction(['submissions', 'cards', 'reviewLogs', 'conversations'], 'readwrite');
+        tx.objectStore('submissions').clear();
+        tx.objectStore('cards').clear();
+        tx.objectStore('reviewLogs').clear();
+        tx.objectStore('conversations').clear();
+
+        for (const record of (imported.submissions || [])) tx.objectStore('submissions').add(record);
+        for (const record of (imported.cards || [])) tx.objectStore('cards').put(record);
+        for (const record of (imported.reviewLogs || [])) tx.objectStore('reviewLogs').add(record);
+        for (const record of (imported.conversations || [])) tx.objectStore('conversations').put(record);
+
+        await new Promise((resolve, reject) => {
+          tx.oncomplete = resolve;
+          tx.onerror = (e) => reject(e.target.error);
+        });
+
+        // Restore settings (merge to preserve captureEnabled)
+        if (imported.settings && Object.keys(imported.settings).length > 0) {
+          const { settings: existing } = await chrome.storage.local.get('settings');
+          await chrome.storage.local.set({ settings: { ...existing, ...imported.settings } });
+        }
+
+        // Update badge after import
+        getDueToday(db).then(cards => updateBadge(cards.length)).catch(() => {});
+
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'CHAT_CLEAR_CONVERSATION') {
     (async () => {
       if (!db) {
@@ -311,7 +425,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     chrome.notifications.create('dueReviews', {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
-      title: 'LeetReminder',
+      title: 'AnkLeet',
       message: `You have ${count} review${count === 1 ? '' : 's'} due today.`
     });
     await chrome.storage.local.set({ lastNotifiedDate: todayStr });
@@ -383,13 +497,81 @@ function enrichCardsWithSubmissionData(database, cards) {
 }
 
 /**
- * Opens (or creates) the 'leetreminder' IndexedDB at version 3.
+ * One-time migration: copies all data from the old 'leetreminder' DB to the new 'ankleet' DB,
+ * then deletes the old DB. No-ops if the old DB doesn't exist.
+ */
+function migrateFromOldDb() {
+  return new Promise((resolve) => {
+    const check = indexedDB.open('leetreminder');
+    check.onerror = () => resolve();
+    check.onsuccess = (e) => {
+      const oldDb = e.target.result;
+      const storeNames = Array.from(oldDb.objectStoreNames);
+      if (storeNames.length === 0) {
+        oldDb.close();
+        indexedDB.deleteDatabase('leetreminder');
+        resolve();
+        return;
+      }
+      // Check if new DB already has data (migration already done)
+      const newCheck = indexedDB.open('ankleet');
+      newCheck.onerror = () => { oldDb.close(); resolve(); };
+      newCheck.onsuccess = (e2) => {
+        const newDb = e2.target.result;
+        const newStores = Array.from(newDb.objectStoreNames);
+        newDb.close();
+        if (newStores.length > 0) {
+          // New DB already set up — just delete old
+          oldDb.close();
+          indexedDB.deleteDatabase('leetreminder');
+          resolve();
+          return;
+        }
+        oldDb.close();
+        // Open new DB with schema, then copy data
+        openDatabase().then((destDb) => {
+          const srcReq = indexedDB.open('leetreminder');
+          srcReq.onsuccess = (e3) => {
+            const srcDb = e3.target.result;
+            const names = Array.from(srcDb.objectStoreNames);
+            const srcTx = srcDb.transaction(names, 'readonly');
+            const allData = {};
+            let pending = names.length;
+            if (pending === 0) { srcDb.close(); destDb.close(); indexedDB.deleteDatabase('leetreminder'); resolve(); return; }
+            for (const name of names) {
+              const req = srcTx.objectStore(name).getAll();
+              req.onsuccess = () => { allData[name] = req.result; if (--pending === 0) copyAll(); };
+              req.onerror = () => { allData[name] = []; if (--pending === 0) copyAll(); };
+            }
+            function copyAll() {
+              srcDb.close();
+              const destNames = Array.from(destDb.objectStoreNames);
+              const validNames = names.filter(n => destNames.includes(n));
+              if (validNames.length === 0) { destDb.close(); indexedDB.deleteDatabase('leetreminder'); resolve(); return; }
+              const destTx = destDb.transaction(validNames, 'readwrite');
+              for (const name of validNames) {
+                const store = destTx.objectStore(name);
+                for (const record of (allData[name] || [])) store.put(record);
+              }
+              destTx.oncomplete = () => { destDb.close(); indexedDB.deleteDatabase('leetreminder'); resolve(); };
+              destTx.onerror = () => { destDb.close(); resolve(); };
+            }
+          };
+          srcReq.onerror = () => { destDb.close(); resolve(); };
+        }).catch(() => resolve());
+      };
+    };
+  });
+}
+
+/**
+ * Opens (or creates) the 'ankleet' IndexedDB at version 3.
  * Migrates from version 1 (submissions only) to version 2 (adds cards + reviewLogs),
  * and from version 2 to version 3 (adds conversations store).
  */
 function openDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('leetreminder', 3);
+    const request = indexedDB.open('ankleet', 3);
 
     request.onblocked = () => {}; // silently wait for other tabs to yield
 
@@ -529,7 +711,7 @@ function deleteConversation(database, titleSlug) {
  */
 async function saveSubmission(data, tabId) {
   if (!data || (!data.id && !data.submissionId && !data.submission_id)) {
-    console.warn('[LeetReminder] Unexpected submission shape', data);
+    console.warn('[AnkLeet] Unexpected submission shape', data);
     return;
   }
 
@@ -574,7 +756,7 @@ async function saveSubmission(data, tabId) {
     try {
       db = await openDatabase();
     } catch (err) {
-      console.warn('[LeetReminder] Failed to re-open IndexedDB', err);
+      console.warn('[AnkLeet] Failed to re-open IndexedDB', err);
       return;
     }
   }
@@ -585,7 +767,7 @@ async function saveSubmission(data, tabId) {
       try {
         await maybeCreateCard(db, record.titleSlug);
       } catch (err) {
-        console.warn('[LeetReminder] maybeCreateCard failed', err);
+        console.warn('[AnkLeet] maybeCreateCard failed', err);
       }
       // Show rating dialog on the LeetCode page for accepted submissions
       if (tabId !== null) {
@@ -739,8 +921,8 @@ async function callOpenRouter(apiKey, model, messages) {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/leetreminder',
-        'X-OpenRouter-Title': 'LeetReminder'
+        'HTTP-Referer': 'https://github.com/ankleet',
+        'X-OpenRouter-Title': 'AnkLeet'
       },
       body: JSON.stringify({ model, max_tokens: 1024, messages })
     });
@@ -854,6 +1036,19 @@ function getDueToday(database) {
     const store = tx.objectStore('cards');
     const index = store.index('due');
     const req = index.getAll(range);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Reads all records from a named object store.
+ */
+function getAllFromStore(database, storeName) {
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction([storeName], 'readonly');
+    const store = tx.objectStore(storeName);
+    const req = store.getAll();
     req.onsuccess = () => resolve(req.result);
     req.onerror = (e) => reject(e.target.error);
   });

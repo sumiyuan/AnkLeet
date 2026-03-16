@@ -1,7 +1,43 @@
-// LeetReminder — Toast & Rating Dialog (content-toast.js)
+// AnkLeet — Toast & Rating Dialog (content-toast.js)
 // World: ISOLATED (default) — runs at document_end so document.body is ready.
 // Shows a brief toast for wrong submissions, or a rating dialog for accepted ones.
 // Shadow DOM prevents LeetCode's styles from bleeding in.
+
+// ── Shared design tokens injected into every Shadow DOM ──
+const LR_TOKENS = `
+  :host {
+    --lr-bg-deep: #0f0f13;
+    --lr-bg-surface: #1a1a21;
+    --lr-bg-elevated: #242430;
+    --lr-border: #2e2e3a;
+    --lr-border-focus: #4a4a5c;
+    --lr-text-primary: #e8e8ed;
+    --lr-text-secondary: #8888a0;
+    --lr-text-muted: #5c5c72;
+    --lr-accent: #F0A830;
+    --lr-accent-hover: #D89620;
+    --lr-accent-glow: rgba(240, 168, 48, 0.15);
+    --lr-success: #3DBAA2;
+    --lr-error: #E85D75;
+    --lr-hint: #8B7CF6;
+    --lr-code-bg: #12121a;
+    --lr-radius-panel: 14px;
+    --lr-radius-btn: 8px;
+    --lr-radius-sm: 5px;
+    --lr-font: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --lr-font-mono: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
+  }
+  * { box-sizing: border-box; }
+`;
+
+const LR_FONT_LINK = 'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap';
+
+function createFontLink() {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = LR_FONT_LINK;
+  return link;
+}
 
 /**
  * Shows a temporary toast notification in the bottom-right corner.
@@ -11,33 +47,38 @@ function showToast(message) {
   removeHost();
 
   const host = document.createElement('div');
-  host.id = 'leetreminder-toast-host';
+  host.id = 'ankleet-toast-host';
   document.body.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'closed' });
 
   const style = document.createElement('style');
-  style.textContent = `
+  style.textContent = LR_TOKENS + `
     .toast {
       all: initial;
       display: block;
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: #1a1a1a;
-      color: #ffffff;
-      padding: 10px 16px;
-      border-radius: 6px;
-      font-family: system-ui, sans-serif;
-      font-size: 14px;
+      bottom: 24px;
+      right: 24px;
+      background: var(--lr-bg-surface);
+      color: var(--lr-text-primary);
+      padding: 12px 18px;
+      border-radius: var(--lr-radius-btn);
+      font-family: var(--lr-font);
+      font-size: 13px;
+      font-weight: 500;
       z-index: 2147483647;
       opacity: 1;
-      transition: opacity 0.3s ease;
+      transform: translateY(0);
+      transition: opacity 0.3s ease, transform 0.3s ease;
       pointer-events: none;
-      box-sizing: border-box;
+      box-shadow:
+        0 4px 16px rgba(0,0,0,0.4),
+        0 0 0 1px var(--lr-border);
     }
     .toast.fade {
       opacity: 0;
+      transform: translateY(6px);
     }
   `;
 
@@ -45,6 +86,7 @@ function showToast(message) {
   toast.className = 'toast';
   toast.textContent = message;
 
+  shadow.appendChild(createFontLink());
   shadow.appendChild(style);
   shadow.appendChild(toast);
 
@@ -62,13 +104,13 @@ function showRatingDialog(titleSlug, title) {
   removeHost();
 
   const host = document.createElement('div');
-  host.id = 'leetreminder-toast-host';
+  host.id = 'ankleet-toast-host';
   document.body.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'closed' });
 
   const style = document.createElement('style');
-  style.textContent = `
+  style.textContent = LR_TOKENS + `
     .overlay {
       all: initial;
       display: flex;
@@ -76,38 +118,53 @@ function showRatingDialog(titleSlug, title) {
       justify-content: center;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.4);
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
       z-index: 2147483647;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: var(--lr-font);
+      animation: overlay-in 0.2s ease;
+    }
+    @keyframes overlay-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
     .dialog {
-      background: #282828;
-      color: #e0e0e0;
-      border-radius: 12px;
-      padding: 24px 28px;
-      max-width: 360px;
+      background: var(--lr-bg-surface);
+      color: var(--lr-text-primary);
+      border-radius: var(--lr-radius-panel);
+      padding: 28px 32px;
+      max-width: 380px;
       width: 90%;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      box-shadow:
+        0 12px 48px rgba(0,0,0,0.5),
+        0 0 0 1px var(--lr-border);
       text-align: center;
+      animation: dialog-in 0.25s cubic-bezier(0.34, 1.3, 0.64, 1);
+    }
+    @keyframes dialog-in {
+      from { opacity: 0; transform: scale(0.95) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
     }
     .dialog-title {
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 700;
       margin-bottom: 6px;
-      color: #ffffff;
+      color: var(--lr-accent);
+      letter-spacing: -0.01em;
     }
     .dialog-problem {
       font-size: 13px;
-      color: #a0a0a0;
-      margin-bottom: 18px;
+      color: var(--lr-text-secondary);
+      margin-bottom: 20px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .dialog-prompt {
       font-size: 13px;
-      color: #b0b0b0;
-      margin-bottom: 14px;
+      color: var(--lr-text-muted);
+      margin-bottom: 16px;
     }
     .rating-buttons {
       display: flex;
@@ -116,36 +173,42 @@ function showRatingDialog(titleSlug, title) {
     }
     .rating-btn {
       all: initial;
-      display: inline-block;
-      padding: 8px 16px;
-      border-radius: 6px;
-      font-family: system-ui, sans-serif;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 18px;
+      border-radius: var(--lr-radius-btn);
+      font-family: var(--lr-font);
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s;
+      transition: opacity 0.15s, transform 0.15s;
       color: #fff;
-      box-sizing: border-box;
     }
-    .rating-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+    .rating-btn:hover { opacity: 0.88; transform: translateY(-2px); }
     .rating-btn:active { transform: translateY(0); }
-    .rating-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
-    .rating-btn[data-rating="Again"] { background: #e05c5c; }
-    .rating-btn[data-rating="Hard"]  { background: #d4893f; }
-    .rating-btn[data-rating="Good"]  { background: #4caf50; }
-    .rating-btn[data-rating="Easy"]  { background: #42a5f5; }
+    .rating-btn:disabled { opacity: 0.35; cursor: default; transform: none; }
+    .rating-btn[data-rating="Again"] { background: var(--lr-error); }
+    .rating-btn[data-rating="Hard"]  { background: #D4893F; }
+    .rating-btn[data-rating="Good"]  { background: var(--lr-success); }
+    .rating-btn[data-rating="Easy"]  { background: #5B8DEF; }
     .skip-btn {
       all: initial;
       display: inline-block;
-      margin-top: 12px;
-      padding: 4px 8px;
-      font-family: system-ui, sans-serif;
+      margin-top: 14px;
+      padding: 6px 12px;
+      font-family: var(--lr-font);
       font-size: 12px;
-      color: #666;
+      color: var(--lr-text-muted);
       cursor: pointer;
       background: none;
+      border-radius: var(--lr-radius-sm);
+      transition: color 0.15s, background 0.15s;
     }
-    .skip-btn:hover { color: #999; }
+    .skip-btn:hover {
+      color: var(--lr-text-secondary);
+      background: var(--lr-bg-elevated);
+    }
   `;
 
   const overlay = document.createElement('div');
@@ -222,6 +285,7 @@ function showRatingDialog(titleSlug, title) {
   dialog.appendChild(skipBtn);
   overlay.appendChild(dialog);
 
+  shadow.appendChild(createFontLink());
   shadow.appendChild(style);
   shadow.appendChild(overlay);
 
@@ -237,13 +301,13 @@ function showRatingDialog(titleSlug, title) {
  */
 function showConfirmationToast(nextDateLabel) {
   var toastHost = document.createElement('div');
-  toastHost.id = 'leetreminder-confirm-host';
+  toastHost.id = 'ankleet-confirm-host';
   document.body.appendChild(toastHost);
 
   var shadow = toastHost.attachShadow({ mode: 'closed' });
 
   var style = document.createElement('style');
-  style.textContent = `
+  style.textContent = LR_TOKENS + `
     .confirm-toast {
       all: initial;
       display: flex;
@@ -252,18 +316,19 @@ function showConfirmationToast(nextDateLabel) {
       position: fixed;
       bottom: 24px;
       right: 24px;
-      background: #282828;
-      color: #e0e0e0;
+      background: var(--lr-bg-surface);
+      color: var(--lr-text-primary);
       padding: 14px 20px;
-      border-radius: 10px;
-      font-family: system-ui, -apple-system, sans-serif;
+      border-radius: var(--lr-radius-btn);
+      font-family: var(--lr-font);
       font-size: 14px;
       z-index: 2147483647;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      box-shadow:
+        0 4px 16px rgba(0,0,0,0.4),
+        0 0 0 1px var(--lr-border);
       opacity: 0;
       transform: translateY(8px);
       transition: opacity 0.25s ease, transform 0.25s ease;
-      box-sizing: border-box;
     }
     .confirm-toast.show {
       opacity: 1;
@@ -274,19 +339,19 @@ function showConfirmationToast(nextDateLabel) {
       transform: translateY(4px);
     }
     .check {
-      color: #4caf50;
-      font-size: 20px;
+      color: var(--lr-success);
+      font-size: 18px;
       font-weight: 700;
       flex-shrink: 0;
     }
     .label {
-      color: #ffffff;
+      color: var(--lr-text-primary);
       font-weight: 600;
-      font-size: 14px;
+      font-size: 13px;
     }
     .next-date {
-      color: #888;
-      font-size: 13px;
+      color: var(--lr-text-muted);
+      font-size: 12px;
       margin-left: 2px;
     }
   `;
@@ -312,6 +377,7 @@ function showConfirmationToast(nextDateLabel) {
     toast.appendChild(dateSpan);
   }
 
+  shadow.appendChild(createFontLink());
   shadow.appendChild(style);
   shadow.appendChild(toast);
 
@@ -331,25 +397,25 @@ function showConfirmationToast(nextDateLabel) {
  * Removes any existing toast/dialog host element.
  */
 function removeHost() {
-  document.getElementById('leetreminder-toast-host')?.remove();
+  document.getElementById('ankleet-toast-host')?.remove();
 }
 
 /**
- * If the page was opened via a review link (#leetreminder-review),
+ * If the page was opened via a review link (#ankleet-review),
  * blur the code editor until the user clicks "Reveal".
  * Uses a MutationObserver to wait for the Monaco editor to mount.
  */
 function maybeBlurEditor() {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('leetreminder') !== 'review') return;
+  if (params.get('ankleet') !== 'review') return;
 
   // Clean up the param so refreshing doesn't re-trigger
-  params.delete('leetreminder');
+  params.delete('ankleet');
   const cleanSearch = params.toString();
   const cleanUrl = window.location.pathname + (cleanSearch ? '?' + cleanSearch : '');
   history.replaceState(null, '', cleanUrl);
 
-  const BLUR_HOST_ID = 'leetreminder-blur-host';
+  const BLUR_HOST_ID = 'ankleet-blur-host';
 
   function applyBlur(editorEl) {
     // Don't double-apply
@@ -362,7 +428,7 @@ function maybeBlurEditor() {
     const shadow = host.attachShadow({ mode: 'closed' });
 
     const style = document.createElement('style');
-    style.textContent = `
+    style.textContent = LR_TOKENS + `
       .blur-overlay {
         all: initial;
         display: flex;
@@ -371,14 +437,14 @@ function maybeBlurEditor() {
         justify-content: center;
         position: absolute;
         inset: 0;
-        background: rgba(30, 30, 30, 0.6);
+        background: rgba(15, 15, 19, 0.65);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         z-index: 10;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--lr-font);
       }
       .blur-message {
-        color: #e0e0e0;
+        color: var(--lr-text-primary);
         font-size: 15px;
         font-weight: 500;
         margin-bottom: 16px;
@@ -389,16 +455,17 @@ function maybeBlurEditor() {
         all: initial;
         display: inline-block;
         padding: 10px 24px;
-        border-radius: 8px;
-        background: #4caf50;
-        color: #fff;
-        font-family: system-ui, sans-serif;
+        border-radius: var(--lr-radius-btn);
+        background: var(--lr-accent);
+        color: #0f0f13;
+        font-family: var(--lr-font);
         font-size: 14px;
-        font-weight: 600;
+        font-weight: 700;
         cursor: pointer;
         transition: opacity 0.15s, transform 0.1s;
+        letter-spacing: 0.01em;
       }
-      .reveal-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+      .reveal-btn:hover { opacity: 0.88; transform: translateY(-1px); }
       .reveal-btn:active { transform: translateY(0); }
     `;
 
@@ -418,6 +485,7 @@ function maybeBlurEditor() {
 
     overlay.appendChild(msg);
     overlay.appendChild(btn);
+    shadow.appendChild(createFontLink());
     shadow.appendChild(style);
     shadow.appendChild(overlay);
 
@@ -504,7 +572,7 @@ function extractEditorCode() {
     var resolved = false;
 
     function handler(event) {
-      if (event.data && event.data.source === 'leetreminder' &&
+      if (event.data && event.data.source === 'ankleet' &&
           event.data.type === 'editor-code' && event.data.reqId === reqId) {
         resolved = true;
         window.removeEventListener('message', handler);
@@ -514,7 +582,7 @@ function extractEditorCode() {
     window.addEventListener('message', handler);
 
     window.postMessage({
-      source: 'leetreminder',
+      source: 'ankleet',
       type: 'request-code',
       reqId: reqId
     }, '*');
@@ -536,45 +604,54 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
   removeHost();
 
   const host = document.createElement('div');
-  host.id = 'leetreminder-toast-host';
+  host.id = 'ankleet-toast-host';
   document.body.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'closed' });
 
   const style = document.createElement('style');
-  style.textContent = `
+  style.textContent = LR_TOKENS + `
     .panel {
       all: initial;
       display: flex;
       flex-direction: column;
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 340px;
-      max-height: 480px;
-      background: #282828;
-      color: #e0e0e0;
-      border-radius: 10px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+      bottom: 24px;
+      right: 24px;
+      width: 360px;
+      max-height: 500px;
+      background: var(--lr-bg-surface);
+      color: var(--lr-text-primary);
+      border-radius: var(--lr-radius-panel);
+      box-shadow:
+        0 12px 48px rgba(0,0,0,0.5),
+        0 0 0 1px var(--lr-border);
       z-index: 2147483647;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: var(--lr-font);
       overflow: hidden;
+      animation: panel-in 0.25s cubic-bezier(0.34, 1.3, 0.64, 1);
+    }
+    @keyframes panel-in {
+      from { opacity: 0; transform: translateY(10px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
     .panel-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 14px;
-      border-bottom: 1px solid #363636;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--lr-border);
+      background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%);
     }
     .panel-title {
       font-size: 13px;
-      font-weight: 600;
-      color: #e05c5c;
+      font-weight: 700;
+      color: var(--lr-error);
+      letter-spacing: -0.01em;
     }
     .panel-problem {
       font-size: 11px;
-      color: #a0a0a0;
+      color: var(--lr-text-muted);
       max-width: 200px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -585,20 +662,32 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
-      border-radius: 4px;
-      font-family: system-ui, sans-serif;
-      font-size: 14px;
-      color: #666;
+      width: 24px;
+      height: 24px;
+      border-radius: var(--lr-radius-sm);
+      font-family: var(--lr-font);
+      font-size: 16px;
+      color: var(--lr-text-muted);
       cursor: pointer;
       flex-shrink: 0;
+      transition: color 0.15s, background 0.15s;
     }
-    .close-btn:hover { color: #999; background: #363636; }
+    .close-btn:hover {
+      color: var(--lr-text-primary);
+      background: var(--lr-bg-elevated);
+    }
     .panel-body {
-      padding: 12px 14px;
+      padding: 14px 16px;
       overflow-y: auto;
       flex: 1;
+      scrollbar-width: thin;
+      scrollbar-color: var(--lr-border) transparent;
+    }
+    .panel-body::-webkit-scrollbar { width: 5px; }
+    .panel-body::-webkit-scrollbar-track { background: transparent; }
+    .panel-body::-webkit-scrollbar-thumb {
+      background: var(--lr-border);
+      border-radius: 3px;
     }
     .ai-buttons {
       display: flex;
@@ -606,54 +695,82 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
     }
     .ai-btn {
       all: initial;
-      display: inline-block;
-      padding: 7px 14px;
-      border-radius: 6px;
-      font-family: system-ui, sans-serif;
-      font-size: 12px;
-      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 18px;
+      border-radius: var(--lr-radius-btn);
+      font-family: var(--lr-font);
+      font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.15s;
+      transition: opacity 0.15s, transform 0.15s;
       color: #fff;
-      box-sizing: border-box;
+      letter-spacing: 0.01em;
     }
-    .ai-btn:hover:not(:disabled) { opacity: 0.85; }
-    .ai-btn:disabled { opacity: 0.4; cursor: default; }
-    .ai-btn.hint { background: #7c6af7; }
-    .ai-btn.full { background: #4caf50; }
+    .ai-btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+    .ai-btn:active:not(:disabled) { transform: translateY(0); }
+    .ai-btn:disabled { opacity: 0.35; cursor: default; transform: none; }
+    .ai-btn.hint { background: var(--lr-hint); }
+    .ai-btn.full { background: var(--lr-success); }
+
+    /* ── Loading: animated dots (matches chat panel) ── */
     .loading {
       display: none;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
       font-size: 12px;
-      color: #888;
-      margin-top: 10px;
+      color: var(--lr-text-secondary);
+      font-family: var(--lr-font);
     }
+    .loading-dots {
+      display: flex;
+      gap: 3px;
+    }
+    .loading-dots span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--lr-accent);
+      animation: dot-bounce 1.2s ease-in-out infinite;
+    }
+    .loading-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .loading-dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes dot-bounce {
+      0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+      30% { opacity: 1; transform: translateY(-3px); }
+    }
+
     .feedback-area {
       text-align: left;
-      margin-top: 10px;
+      margin-top: 12px;
     }
     .feedback-area p {
       white-space: pre-wrap;
-      line-height: 1.5;
+      line-height: 1.55;
       margin: 0 0 8px 0;
-      font-size: 12px;
-      color: #d0d0d0;
+      font-size: 13px;
+      color: var(--lr-text-primary);
     }
     .feedback-area pre {
-      background: #1e1e1e;
+      background: var(--lr-code-bg);
       overflow-x: auto;
-      font-family: 'Fira Mono', 'Consolas', monospace;
-      font-size: 11px;
-      color: #ce9178;
-      padding: 8px 10px;
-      border-radius: 6px;
+      font-family: var(--lr-font-mono);
+      font-size: 12.5px;
+      color: #cdd6f4;
+      padding: 12px 14px;
+      border-radius: var(--lr-radius-btn);
       margin: 0 0 8px 0;
       white-space: pre;
+      border: 1px solid var(--lr-border);
     }
     .error-msg {
-      color: #e05c5c;
+      color: var(--lr-error);
       font-size: 12px;
       text-align: left;
-      margin-top: 10px;
+      margin-top: 12px;
+      font-family: var(--lr-font);
     }
   `;
 
@@ -702,6 +819,12 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
 
   const loadingEl = document.createElement('div');
   loadingEl.className = 'loading';
+  const dotsContainer = document.createElement('div');
+  dotsContainer.className = 'loading-dots';
+  for (let i = 0; i < 3; i++) dotsContainer.appendChild(document.createElement('span'));
+  loadingEl.appendChild(dotsContainer);
+  const loadingText = document.createElement('span');
+  loadingEl.appendChild(loadingText);
 
   const feedbackArea = document.createElement('div');
   feedbackArea.className = 'feedback-area';
@@ -713,14 +836,15 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
   panel.appendChild(header);
   panel.appendChild(body);
 
+  shadow.appendChild(createFontLink());
   shadow.appendChild(style);
   shadow.appendChild(panel);
 
   function requestFeedback(mode) {
     hintBtn.disabled = true;
     fullBtn.disabled = true;
-    loadingEl.style.display = 'block';
-    loadingEl.textContent = mode === 'hint' ? 'Getting hint...' : 'Getting full solution...';
+    loadingEl.style.display = 'flex';
+    loadingText.textContent = mode === 'hint' ? 'Getting hint' : 'Getting solution';
     feedbackArea.innerHTML = '';
 
     // Extract current editor code via content-main.js (MAIN world), then send feedback request

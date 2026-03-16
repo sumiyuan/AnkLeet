@@ -1,4 +1,4 @@
-// LeetReminder — Message Relay (content-isolated.js)
+// AnkLeet — Message Relay (content-isolated.js)
 // World: ISOLATED (default) — runs in the extension content script context.
 // Bridges window.postMessage (from content-main.js in MAIN world) to
 // chrome.runtime.sendMessage (to background.js service worker).
@@ -11,7 +11,7 @@ window.addEventListener('message', function (event) {
   if (event.source !== window) return;
 
   // Only handle messages posted by content-main.js
-  if (event.data?.source !== 'leetreminder') return;
+  if (event.data?.source !== 'ankleet') return;
   if (event.data?.type !== 'submission') return;
 
   const payload = event.data.data;

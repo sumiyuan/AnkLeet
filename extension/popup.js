@@ -1,4 +1,4 @@
-// LeetReminder — Popup Script
+// AnkLeet — Popup Script
 // No inline scripts — all event listeners via addEventListener (MV3 CSP compliant)
 
 // ── Tab Switching ──
@@ -114,6 +114,78 @@ function renderTodayActivity(submissions) {
   }
 }
 
+// ── Activity Grid ──
+
+function renderActivityGrid(counts) {
+  const gridEl = document.getElementById('activity-grid');
+  const labelsEl = document.getElementById('grid-labels');
+  const totalEl = document.getElementById('grid-total');
+  if (!gridEl || !labelsEl) return;
+
+  gridEl.innerHTML = '';
+  labelsEl.innerHTML = '';
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Build array of last 14 days
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+
+  // Find max for level scaling
+  const values = days.map(d => counts[d] || 0);
+  const total = values.reduce((a, b) => a + b, 0);
+  const max = Math.max(...values, 1);
+
+  if (totalEl) {
+    totalEl.textContent = total + ' submission' + (total === 1 ? '' : 's');
+  }
+
+  days.forEach((dateStr, idx) => {
+    const count = values[idx];
+    let level = 0;
+    if (count > 0) {
+      const ratio = count / max;
+      if (ratio <= 0.25) level = 1;
+      else if (ratio <= 0.5) level = 2;
+      else if (ratio <= 0.75) level = 3;
+      else level = 4;
+    }
+
+    const cell = document.createElement('div');
+    cell.className = 'grid-cell';
+    cell.dataset.level = level;
+    const d = new Date(dateStr + 'T00:00:00');
+    const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    cell.dataset.tooltip = label + ': ' + count + ' submission' + (count === 1 ? '' : 's');
+    gridEl.appendChild(cell);
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'grid-label';
+    const isToday = idx === 13;
+    if (isToday) {
+      labelEl.classList.add('today');
+      labelEl.textContent = 'Today';
+    } else {
+      labelEl.textContent = dayNames[d.getDay()];
+    }
+    labelsEl.appendChild(labelEl);
+  });
+}
+
+function loadActivityGrid() {
+  chrome.runtime.sendMessage({ type: 'GET_RECENT_ACTIVITY', payload: { days: 14 } }, response => {
+    if (response && response.counts) {
+      renderActivityGrid(response.counts);
+    }
+  });
+}
+
 // ── Dashboard Data Loading ──
 
 function loadDashboard() {
@@ -128,6 +200,8 @@ function loadDashboard() {
       resolve((response && response.submissions) ? response.submissions : []);
     });
   });
+
+  loadActivityGrid();
 
   Promise.all([statsPromise, submissionsPromise]).then(([stats, submissions]) => {
     renderStats(stats);
@@ -201,7 +275,7 @@ function renderReviewQueue(cards) {
     link.title = displayTitle;
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      chrome.tabs.create({ url: 'https://leetcode.com/problems/' + card.titleSlug + '/?leetreminder=review' });
+      chrome.tabs.create({ url: 'https://leetcode.com/problems/' + card.titleSlug + '/?ankleet=review' });
     });
 
     titleRow.appendChild(link);
@@ -324,6 +398,68 @@ function saveSettings() {
   });
 }
 
+// ── Data Export/Import ──
+
+function showDataStatus(text, isError) {
+  const el = document.getElementById('data-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? '#E85D75' : '#3DBAA2';
+  el.classList.add('visible');
+  setTimeout(() => el.classList.remove('visible'), 3000);
+}
+
+function exportData() {
+  const btn = document.getElementById('export-data');
+  if (btn) btn.disabled = true;
+
+  chrome.runtime.sendMessage({ type: 'EXPORT_DATA' }, response => {
+    if (btn) btn.disabled = false;
+    if (!response || response.error) {
+      showDataStatus(response?.error || 'Export failed', true);
+      return;
+    }
+    const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'ankleet-export-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showDataStatus('Data exported');
+  });
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(reader.result);
+    } catch {
+      showDataStatus('Invalid JSON file', true);
+      return;
+    }
+    if (!parsed.version) {
+      showDataStatus('Not a valid AnkLeet export', true);
+      return;
+    }
+
+    chrome.runtime.sendMessage({ type: 'IMPORT_DATA', payload: parsed }, response => {
+      if (!response || response.error) {
+        showDataStatus(response?.error || 'Import failed', true);
+        return;
+      }
+      showDataStatus('Data imported successfully');
+      // Refresh current view
+      loadDashboard();
+      loadSettings();
+    });
+  };
+  reader.onerror = () => showDataStatus('Failed to read file', true);
+  reader.readAsText(file);
+}
+
 // ── Init ──
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -334,5 +470,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveBtn = document.getElementById('save-settings');
   if (saveBtn) {
     saveBtn.addEventListener('click', saveSettings);
+  }
+
+  // Wire export/import buttons
+  const exportBtn = document.getElementById('export-data');
+  if (exportBtn) exportBtn.addEventListener('click', exportData);
+
+  const importBtn = document.getElementById('import-data');
+  const importFile = document.getElementById('import-file');
+  if (importBtn && importFile) {
+    importBtn.addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', () => {
+      if (importFile.files.length > 0) {
+        importData(importFile.files[0]);
+        importFile.value = ''; // reset so same file can be re-imported
+      }
+    });
   }
 });
