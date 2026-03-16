@@ -43,7 +43,7 @@ AnkLeet is not on the Chrome Web Store. Install it as an unpacked extension:
 
 1. **Clone the repo**
    ```
-   git clone https://github.com/yourusername/ankleet.git
+   git clone https://github.com/sumiyuan/ankleet.git
    ```
 
 2. **Open Chrome extensions page**
