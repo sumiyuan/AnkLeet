@@ -138,6 +138,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const feedback = await callOpenRouter(apiKey, model, [{ role: 'user', content: buildPrompt(submission, message.payload.mode) }]);
         sendResponse({ feedback });
+
+        // Seed hint/solution into chat conversation so it appears as opening message.
+        // Runs after sendResponse so it does not block the wrong-submission panel.
+        let conversation = await getConversation(db, submission.titleSlug);
+        const now = Date.now();
+        if (!conversation) {
+          conversation = { titleSlug: submission.titleSlug, messages: [], createdAt: now, updatedAt: now };
+          conversation.messages.push(buildSystemPrompt(submission.titleSlug));
+        }
+        const modeLabel = message.payload.mode === 'hint' ? 'hint' : 'full solution';
+        conversation.messages.push({
+          role: 'user',
+          content: `I submitted a wrong answer and asked for a ${modeLabel}.`,
+          timestamp: now
+        });
+        conversation.messages.push({ role: 'assistant', content: feedback, timestamp: now });
+        conversation.updatedAt = now;
+        await putConversation(db, conversation);
+        try {
+          await chrome.tabs.sendMessage(sender.tab.id, {
+            type: 'SHOW_CHAT_SEED',
+            titleSlug: submission.titleSlug
+          });
+        } catch { /* tab navigated away */ }
       } catch (err) {
         sendResponse({ error: err.message });
       } finally {
