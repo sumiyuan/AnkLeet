@@ -21,7 +21,7 @@ Requirements for AI Chat milestone. Each maps to roadmap phases.
 - [x] **CONV-02**: User can start a new chat which archives the previous conversation
 - [ ] **CONV-03**: User can browse past conversations for a problem in a history view
 - [ ] **CONV-04**: User can delete individual past conversations
-- [ ] **CONV-05**: Hints/solutions from the wrong-submission panel are saved as the opening message of the chat conversation
+- [x] **CONV-05**: Hints/solutions from the wrong-submission panel are saved as the opening message of the chat conversation
 
 ## Future Requirements
 
@@ -58,7 +58,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONV-02 | Phase 7 | Complete |
 | CONV-03 | Phase 8 | Pending |
 | CONV-04 | Phase 8 | Pending |
-| CONV-05 | Phase 7 | Pending |
+| CONV-05 | Phase 7 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 10 total

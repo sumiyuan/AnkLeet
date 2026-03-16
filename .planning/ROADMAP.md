@@ -28,7 +28,7 @@
 ### v1.2 AI Chat (Phases 6-8)
 
 - [x] **Phase 6: Conversation Storage and Multi-Turn AI** - IndexedDB conversations store, background chat handlers, multi-turn OpenRouter integration (completed 2026-03-15)
-- [ ] **Phase 7: Chat Panel UI and Integration** - Persistent chat button, Shadow DOM panel, message rendering, wrong submission seeding
+- [x] **Phase 7: Chat Panel UI and Integration** - Persistent chat button, Shadow DOM panel, message rendering, wrong submission seeding (completed 2026-03-16)
 - [ ] **Phase 8: Conversation History** - Popup Chats tab with history browsing and deletion
 
 ## Phase Details
@@ -78,5 +78,5 @@ Plans:
 | 4. API Integration | v1.1 | 1/1 | Complete | 2026-03-14 |
 | 5. Wrong Submission Dialog | v1.1 | 1/1 | Complete | 2026-03-15 |
 | 6. Conversation Storage and Multi-Turn AI | 1/1 | Complete   | 2026-03-15 | - |
-| 7. Chat Panel UI and Integration | 1/2 | In Progress|  | - |
+| 7. Chat Panel UI and Integration | 2/2 | Complete   | 2026-03-16 | - |
 | 8. Conversation History | v1.2 | 0/? | Not started | - |
