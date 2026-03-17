@@ -53,7 +53,7 @@ AnkLeet is not on the Chrome Web Store. Install it as an unpacked extension:
    Toggle the "Developer mode" switch in the top-right corner.
 
 4. **Load the extension**
-   Click "Load unpacked" and select the `extension/` folder inside the cloned repo.
+   Click "Load unpacked" and select the cloned `ankleet/` folder.
 
 5. **Configure AI (optional)**
    Click the AnkLeet icon in your toolbar, go to the Settings tab, and paste your [OpenRouter API key](https://openrouter.ai/keys). This enables the AI chat and hint features. Without it, everything else still works.
@@ -68,16 +68,17 @@ AnkLeet is not on the Chrome Web Store. Install it as an unpacked extension:
 AnkLeet is a vanilla Chrome Extension (Manifest V3) with no build step or npm dependencies.
 
 ```
-extension/
-├── manifest.json          # MV3 config — permissions, content scripts, service worker
-├── background.js          # Service worker — data layer, FSRS scheduler, OpenRouter API
-├── content-main.js        # MAIN world — intercepts XHR/fetch on LeetCode pages
-├── content-isolated.js    # ISOLATED world — relays messages from page to service worker
-├── content-toast.js       # ISOLATED world — rating dialogs, wrong submission panel, toasts
-├── content-chat.js        # ISOLATED world — floating AI chat panel (Shadow DOM)
+ankleet/
+├── manifest.json            # MV3 config — permissions, content scripts, service worker
+├── background.js            # Service worker — data layer, FSRS scheduler, OpenRouter API
+├── content-main.js          # MAIN world — intercepts XHR/fetch on LeetCode pages
+├── content-isolated.js      # ISOLATED world — relays messages from page to service worker
+├── content-toast.js         # ISOLATED world — rating dialogs, wrong submission panel, toasts
+├── content-chat.js          # ISOLATED world — floating AI chat panel (Shadow DOM)
 ├── popup.html / .js / .css  # Extension popup — dashboard, reviews, settings
+├── icons/                   # Extension icons (16, 48, 128px)
 └── lib/
-    └── ts-fsrs.umd.js    # FSRS spaced repetition library (UMD bundle)
+    └── ts-fsrs.umd.js      # FSRS spaced repetition library (UMD bundle)
 ```
 
 ### Data Flow
