@@ -2,9 +2,68 @@
 // ALL event listeners MUST be registered at the top level (global scope).
 // Never register listeners inside callbacks or async functions.
 
-importScripts('lib/ts-fsrs.umd.js');
-// UMD exposes: FSRS.createEmptyCard, FSRS.fsrs, FSRS.Rating, FSRS.State
-const { createEmptyCard, fsrs, Rating, State } = FSRS;
+// ── Custom Spaced Repetition (day-scale, tuned for LeetCode) ──
+//
+// Card state: { interval, ease, reps, lapses }
+//   interval — current interval in days (next review = last_review + interval)
+//   ease     — multiplier for interval growth (starts at 2.5, min 1.3)
+//   reps     — consecutive successful reviews (Good or Easy)
+//   lapses   — total times the card was rated Again
+//
+// Rating multipliers applied to the current interval:
+//   Again → reset to 1 day, ease -= 0.2
+//   Hard  → interval * 1.2, ease -= 0.15
+//   Good  → interval * ease
+//   Easy  → interval * ease * 1.3, ease += 0.15
+//
+// First review intervals (reps === 0):
+//   Again: 1d, Hard: 2d, Good: 4d, Easy: 7d
+
+const SRS_DEFAULTS = { interval: 0, ease: 2.5, reps: 0, lapses: 0 };
+
+function srsSchedule(card, ratingName) {
+  let { interval, ease, reps, lapses } = { ...SRS_DEFAULTS, ...card };
+  let newInterval;
+
+  if (reps === 0) {
+    // First review — use fixed starting intervals
+    const firstIntervals = { Again: 1, Hard: 2, Good: 4, Easy: 7 };
+    newInterval = firstIntervals[ratingName];
+    if (ratingName === 'Again') {
+      ease = Math.max(1.3, ease - 0.2);
+      lapses++;
+      reps = 0;
+    } else {
+      if (ratingName === 'Easy') ease = Math.min(3.5, ease + 0.15);
+      reps = 1;
+    }
+  } else {
+    switch (ratingName) {
+      case 'Again':
+        newInterval = 1;
+        ease = Math.max(1.3, ease - 0.2);
+        lapses++;
+        reps = 0;
+        break;
+      case 'Hard':
+        newInterval = Math.max(2, Math.round(interval * 1.2));
+        ease = Math.max(1.3, ease - 0.15);
+        reps++;
+        break;
+      case 'Good':
+        newInterval = Math.max(interval + 1, Math.round(interval * ease));
+        reps++;
+        break;
+      case 'Easy':
+        newInterval = Math.max(interval + 1, Math.round(interval * ease * 1.3));
+        ease = Math.min(3.5, ease + 0.15);
+        reps++;
+        break;
+    }
+  }
+
+  return { interval: newInterval, ease, reps, lapses };
+}
 
 // Module-scope DB reference — persists for the lifetime of this worker instance.
 let db = null;
@@ -127,10 +186,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           req.onsuccess = () => resolve(req.result);
           req.onerror = (e) => reject(e.target.error);
         });
-        // Aggregate by calendar day
+        // Aggregate by local calendar day (not UTC — toISOString would shift dates for non-UTC timezones)
         const counts = {};
         for (const sub of submissions) {
-          const day = new Date(sub.capturedAt).toISOString().slice(0, 10);
+          const day = toLocalDateStr(new Date(sub.capturedAt));
           counts[day] = (counts[day] || 0) + 1;
         }
         sendResponse({ counts });
@@ -435,6 +494,13 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // --- Functions ---
 
 /**
+ * Formats a Date as 'YYYY-MM-DD' using the local timezone (not UTC).
+ */
+function toLocalDateStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/**
  * Updates the extension icon badge with the number of due reviews.
  * Clears the badge when count is 0.
  */
@@ -707,7 +773,7 @@ function deleteConversation(database, titleSlug) {
  * Transforms the intercepted submission payload into a storage record
  * and writes it to IndexedDB. Silently skips duplicates (ConstraintError).
  * Sends SHOW_TOAST to the source tab on successful save.
- * On first Accepted submission for a problem, creates an FSRS card.
+ * On first Accepted submission for a problem, creates a review card.
  */
 async function saveSubmission(data, tabId) {
   if (!data || (!data.id && !data.submissionId && !data.submission_id)) {
@@ -763,6 +829,8 @@ async function saveSubmission(data, tabId) {
 
   const saved = await addRecord(db, record);
   if (saved !== null) {
+    // Signal popup to refresh dashboard (storage change triggers onChanged listener)
+    chrome.storage.local.set({ lastSubmissionAt: Date.now() });
     if (record.statusDisplay === 'Accepted') {
       try {
         await maybeCreateCard(db, record.titleSlug);
@@ -789,24 +857,21 @@ async function saveSubmission(data, tabId) {
 }
 
 /**
- * Creates or resets an FSRS card for a problem.
+ * Creates or resets a review card for a problem.
  * On repeated accepted submissions, resets the schedule so the
  * latest attempt drives the review cadence. Preserves createdAt.
  */
 async function maybeCreateCard(database, titleSlug) {
   const existing = await getCard(database, titleSlug);
 
-  const emptyCard = createEmptyCard(new Date());
+  const now = new Date();
   const card = {
     titleSlug,
-    due: emptyCard.due.toISOString(),
-    stability: emptyCard.stability,
-    difficulty: emptyCard.difficulty,
-    elapsed_days: emptyCard.elapsed_days,
-    scheduled_days: emptyCard.scheduled_days,
-    reps: emptyCard.reps,
-    lapses: emptyCard.lapses,
-    state: emptyCard.state,
+    due: now.toISOString(),
+    interval: SRS_DEFAULTS.interval,
+    ease: SRS_DEFAULTS.ease,
+    reps: SRS_DEFAULTS.reps,
+    lapses: SRS_DEFAULTS.lapses,
     last_review: null,
     createdAt: existing ? existing.createdAt : Date.now()
   };
@@ -959,8 +1024,7 @@ async function notifyTab(tabId, message) {
 
 /**
  * Rates a review for a card identified by titleSlug.
- * Reconstructs Date fields before passing to the FSRS scheduler,
- * updates the card in IndexedDB, and adds a review log entry.
+ * Uses a custom day-scale spaced repetition algorithm.
  * ratingName must be one of: 'Again', 'Hard', 'Good', 'Easy'.
  */
 async function rateReview(database, titleSlug, ratingName) {
@@ -974,48 +1038,30 @@ async function rateReview(database, titleSlug, ratingName) {
     throw new Error(`Card not found for titleSlug: ${titleSlug}`);
   }
 
-  // Reconstruct Date fields — FSRS scheduler requires real Date objects
-  const card = {
-    ...stored,
-    due: new Date(stored.due),
-    last_review: stored.last_review ? new Date(stored.last_review) : null
-  };
-
-  const scheduler = fsrs();
   const now = new Date();
-  const recordLog = scheduler.repeat(card, now);
-
-  const rating = Rating[ratingName];
-  const { card: newCard, log } = recordLog[rating];
+  const ratingMap = { Again: 1, Hard: 2, Good: 3, Easy: 4 };
+  const result = srsSchedule(stored, ratingName);
 
   const reviewLogEntry = {
     titleSlug,
-    rating: log.rating,
-    oldState: stored.state,
-    newState: newCard.state,
-    scheduledDays: log.scheduled_days,
-    elapsedDays: log.elapsed_days,
+    rating: ratingMap[ratingName],
+    oldInterval: stored.interval || 0,
+    newInterval: result.interval,
     reviewedAt: now.toISOString()
   };
 
-  // Enforce minimum 1-day interval — FSRS default learning steps are minutes,
-  // which makes sense for flashcards but not for re-solving LeetCode problems.
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(0, 0, 0, 0);
-  const effectiveDue = newCard.due < tomorrow ? tomorrow : newCard.due;
+  const dueDate = new Date(now);
+  dueDate.setDate(dueDate.getDate() + result.interval);
+  dueDate.setHours(0, 0, 0, 0);
 
   const updatedCard = {
     titleSlug,
-    due: effectiveDue.toISOString(),
-    stability: newCard.stability,
-    difficulty: newCard.difficulty,
-    elapsed_days: newCard.elapsed_days,
-    scheduled_days: newCard.scheduled_days,
-    reps: newCard.reps,
-    lapses: newCard.lapses,
-    state: newCard.state,
-    last_review: newCard.last_review ? newCard.last_review.toISOString() : null,
+    due: dueDate.toISOString(),
+    interval: result.interval,
+    ease: result.ease,
+    reps: result.reps,
+    lapses: result.lapses,
+    last_review: now.toISOString(),
     createdAt: stored.createdAt
   };
 
@@ -1070,14 +1116,25 @@ function getAllReviewLogs(database) {
 /**
  * Computes the consecutive calendar-day streak counting backward from today.
  * reviewDays: Set of 'YYYY-MM-DD' date strings representing days with at least one review.
+ * If today has no activity yet, starts counting from yesterday (the user still
+ * has time to extend the streak today).
  */
 function computeStreak(reviewDays) {
   let streak = 0;
   const cursor = new Date();
   cursor.setHours(0, 0, 0, 0);
 
+  const todayStr = toLocalDateStr(cursor);
+  if (reviewDays.has(todayStr)) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  } else {
+    // Today hasn't happened yet — start from yesterday
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
   while (true) {
-    const dayStr = cursor.toISOString().slice(0, 10);
+    const dayStr = toLocalDateStr(cursor);
     if (!reviewDays.has(dayStr)) break;
     streak++;
     cursor.setDate(cursor.getDate() - 1);
@@ -1122,7 +1179,7 @@ async function getStats(database) {
     retentionRate = Math.round((retained / totalReviews) * 100);
   }
 
-  const reviewDays = new Set(logs.map(log => log.reviewedAt.slice(0, 10)));
+  const reviewDays = new Set(logs.map(log => toLocalDateStr(new Date(log.reviewedAt))));
   const streak = computeStreak(reviewDays);
 
   return { totalReviews, retentionRate, streak };

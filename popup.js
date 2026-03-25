@@ -116,6 +116,10 @@ function renderTodayActivity(submissions) {
 
 // ── Activity Grid ──
 
+function toLocalDateStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function renderActivityGrid(counts) {
   const gridEl = document.getElementById('activity-grid');
   const labelsEl = document.getElementById('grid-labels');
@@ -129,12 +133,12 @@ function renderActivityGrid(counts) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Build array of last 14 days
+  // Build array of last 14 days using local dates (not UTC)
   const days = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    days.push(d.toISOString().slice(0, 10));
+    days.push(toLocalDateStr(d));
   }
 
   // Find max for level scaling
@@ -487,4 +491,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Refresh dashboard when a new submission is captured
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.lastSubmissionAt) {
+      loadDashboard();
+    }
+  });
 });

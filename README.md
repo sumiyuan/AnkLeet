@@ -1,6 +1,6 @@
 # AnkLeet
 
-**Spaced repetition for LeetCode.** AnkLeet automatically captures every submission you make on LeetCode and schedules reviews using the FSRS algorithm — the same algorithm behind modern flashcard apps like Anki. It also provides an AI tutor that can give hints, explain solutions, and chat about any problem.
+**Spaced repetition for LeetCode.** AnkLeet automatically captures every submission you make on LeetCode and schedules reviews using a custom spaced repetition algorithm tuned for day-scale problem solving. It also provides an AI tutor that can give hints, explain solutions, and chat about any problem.
 
 No cloud accounts. No signup. Everything runs locally in your browser.
 
@@ -11,8 +11,22 @@ No cloud accounts. No signup. Everything runs locally in your browser.
 ### Automatic Submission Capture
 AnkLeet intercepts LeetCode's network requests to detect submissions in real-time. Every accepted solution creates a review card; wrong submissions trigger an AI feedback panel with hint and full solution options.
 
-### FSRS Spaced Repetition
-Review cards are scheduled using the [FSRS](https://github.com/open-spaced-repetition/ts-fsrs) algorithm. After solving a problem, rate your recall (Again / Hard / Good / Easy) and AnkLeet computes when you should revisit it. The extension badge shows how many reviews are due today.
+### Spaced Repetition
+
+Review cards are scheduled using a custom algorithm designed for LeetCode — where intervals are measured in days, not minutes like traditional flashcard systems.
+
+After each review, rate your recall and AnkLeet computes when you should revisit the problem:
+
+| Rating | First review | Subsequent reviews |
+|--------|-------------|-------------------|
+| Again | 1 day | Reset to 1 day |
+| Hard | 2 days | interval × 1.2 |
+| Good | 4 days | interval × ease (default 2.5) |
+| Easy | 7 days | interval × ease × 1.3 |
+
+Each card tracks its own **ease factor** (starting at 2.5) that adapts based on your ratings — cards you struggle with get shorter intervals, cards you find easy get progressively longer ones. A card rated Good repeatedly grows as: 4d → 10d → 25d → 63d → 158d.
+
+The extension badge shows how many reviews are due today.
 
 ### AI Chat & Hints
 An AI chat panel (powered by [OpenRouter](https://openrouter.ai)) lives on every problem page. Use it to:
@@ -70,15 +84,14 @@ AnkLeet is a vanilla Chrome Extension (Manifest V3) with no build step or npm de
 ```
 ankleet/
 ├── manifest.json            # MV3 config — permissions, content scripts, service worker
-├── background.js            # Service worker — data layer, FSRS scheduler, OpenRouter API
+├── background.js            # Service worker — data layer, SRS scheduler, OpenRouter API
 ├── content-main.js          # MAIN world — intercepts XHR/fetch on LeetCode pages
 ├── content-isolated.js      # ISOLATED world — relays messages from page to service worker
 ├── content-toast.js         # ISOLATED world — rating dialogs, wrong submission panel, toasts
 ├── content-chat.js          # ISOLATED world — floating AI chat panel (Shadow DOM)
 ├── popup.html / .js / .css  # Extension popup — dashboard, reviews, settings
-├── icons/                   # Extension icons (16, 48, 128px)
-└── lib/
-    └── ts-fsrs.umd.js      # FSRS spaced repetition library (UMD bundle)
+├── fonts/                   # Bundled DM Sans and JetBrains Mono fonts
+└── icons/                   # Extension icons (16, 48, 128px)
 ```
 
 ### Data Flow
@@ -103,7 +116,7 @@ Service Worker (background.js)
   │
   ├─ IndexedDB (ankleet, v3)
   │    submissions — every captured submission
-  │    cards — one FSRS card per problem
+  │    cards — one SRS card per problem (interval, ease, reps, lapses)
   │    reviewLogs — audit trail of every rating
   │    conversations — per-problem AI chat history
   │
@@ -127,11 +140,11 @@ Service Worker (background.js)
 
 **Service worker owns all data.** Content scripts are stateless and ephemeral — they request data from `background.js` via message passing. All IndexedDB reads and writes happen in the service worker, which acts as the single source of truth.
 
-**FSRS with minimum 1-day intervals.** The FSRS library's default learning steps are measured in minutes (designed for flashcards). Since re-solving a LeetCode problem takes much longer than reading a flashcard, AnkLeet enforces a minimum 1-day interval between reviews.
+**Custom day-scale SRS over FSRS.** Traditional flashcard algorithms (like FSRS) use minute-scale learning steps because reviewing a flashcard takes seconds. Re-solving a LeetCode problem takes much longer, so AnkLeet uses a custom algorithm where intervals start at days and grow via an adaptive ease factor. This produces natural interval progression without needing to clamp or override the scheduler.
 
 **OpenRouter over direct model APIs.** A single API key gives access to Claude, GPT, and Gemini models. Users pick their preferred model in settings without managing multiple API keys.
 
-**No build step.** The extension is plain JavaScript with a single vendored UMD library. No bundler, no transpiler, no node_modules. Clone and load.
+**No build step.** The extension is plain JavaScript with no external dependencies. No bundler, no transpiler, no node_modules. Clone and load.
 
 ---
 
@@ -145,8 +158,6 @@ Service Worker (background.js)
 | `https://leetcode.com/*` | Intercept submissions, inject UI on problem pages |
 | `https://neetcode.io/*` | Future support for neetcode problem pages |
 | `https://openrouter.ai/*` | AI chat and hint API calls |
-| `https://fonts.googleapis.com/*` | Load DM Sans and JetBrains Mono fonts for UI |
-| `https://fonts.gstatic.com/*` | Font file delivery |
 
 ---
 

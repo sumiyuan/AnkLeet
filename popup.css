@@ -1,5 +1,21 @@
 /* AnkLeet Popup — Obsidian Terminal Design */
 
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('fonts/dm-sans-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('fonts/jetbrains-mono-latin.woff2') format('woff2');
+}
+
 :root {
   --lr-bg-deep: #0f0f13;
   --lr-bg-surface: #1a1a21;
@@ -97,9 +113,17 @@ body {
   display: block;
 }
 
+/* Dashboard uses flex layout so the activity list scrolls independently */
+#tab-dashboard.active {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* ── Activity Grid ── */
 
 .activity-grid-section {
+  flex-shrink: 0;
   background: var(--lr-bg-surface);
   padding: 14px 14px 12px;
   border-bottom: 1px solid var(--lr-border);
@@ -262,6 +286,7 @@ body {
 /* ── Stats Bar ── */
 
 .stats-bar {
+  flex-shrink: 0;
   display: flex;
   flex-direction: row;
   background: var(--lr-bg-surface);
@@ -301,6 +326,7 @@ body {
 /* ── Section Header ── */
 
 .section-header {
+  flex-shrink: 0;
   padding: 10px 14px 8px;
   font-size: 10px;
   font-weight: 700;
@@ -315,6 +341,18 @@ body {
 
 .activity-list {
   background: var(--lr-bg-surface);
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lr-border) transparent;
+}
+
+.activity-list::-webkit-scrollbar { width: 5px; }
+.activity-list::-webkit-scrollbar-track { background: transparent; }
+.activity-list::-webkit-scrollbar-thumb {
+  background: var(--lr-border);
+  border-radius: 3px;
 }
 
 .activity-item {
