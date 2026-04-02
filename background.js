@@ -1050,9 +1050,21 @@ async function rateReview(database, titleSlug, ratingName) {
     reviewedAt: now.toISOString()
   };
 
-  const dueDate = new Date(now);
+  let dueDate = new Date(now);
   dueDate.setDate(dueDate.getDate() + result.interval);
   dueDate.setHours(0, 0, 0, 0);
+
+  // Cap at 3 reviews per day — push forward if the target day is full
+  const MAX_PER_DAY = 3;
+  const allCards = await getAllFromStore(database, 'cards');
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const dayStr = toLocalDateStr(dueDate);
+    const count = allCards.filter(c =>
+      c.titleSlug !== titleSlug && c.due && toLocalDateStr(new Date(c.due)) === dayStr
+    ).length;
+    if (count < MAX_PER_DAY) break;
+    dueDate.setDate(dueDate.getDate() + 1);
+  }
 
   const updatedCard = {
     titleSlug,
