@@ -166,12 +166,18 @@ body {
   border: 1px solid var(--lr-border);
   transition: transform 0.15s, box-shadow 0.15s;
   position: relative;
+  cursor: pointer;
 }
 
 .grid-cell:hover {
   transform: scale(1.25);
   z-index: 1;
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.grid-cell.selected {
+  box-shadow: 0 0 0 2px var(--lr-accent), 0 2px 8px rgba(0,0,0,0.4);
+  z-index: 1;
 }
 
 .grid-cell[data-level="1"] {
@@ -335,6 +341,28 @@ body {
   letter-spacing: 0.08em;
   border-bottom: 1px solid var(--lr-border);
   background: var(--lr-bg-deep);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.activity-back-today {
+  all: unset;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--lr-accent);
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 2px 6px;
+  border-radius: var(--lr-radius-sm);
+  transition: background 0.15s, color 0.15s;
+}
+
+.activity-back-today:hover {
+  background: var(--lr-bg-elevated);
+  color: var(--lr-accent-hover);
 }
 
 /* ── Activity List ── */
@@ -486,6 +514,33 @@ body {
   border-radius: var(--lr-radius-sm);
   letter-spacing: 0.02em;
   flex-shrink: 0;
+}
+
+.card-remove-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-family: var(--lr-font);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--lr-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--lr-radius-sm);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.card-remove-btn:hover {
+  color: var(--lr-error);
+  background: rgba(232, 93, 117, 0.12);
+}
+
+.card-remove-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .difficulty-badge.easy {

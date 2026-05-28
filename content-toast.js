@@ -192,10 +192,16 @@ function showRatingDialog(titleSlug, title) {
     .rating-btn[data-rating="Hard"]  { background: #D4893F; }
     .rating-btn[data-rating="Good"]  { background: var(--lr-success); }
     .rating-btn[data-rating="Easy"]  { background: #5B8DEF; }
-    .skip-btn {
+    .footer-actions {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .skip-btn,
+    .remove-btn {
       all: initial;
       display: inline-block;
-      margin-top: 14px;
       padding: 6px 12px;
       font-family: var(--lr-font);
       font-size: 12px;
@@ -208,6 +214,15 @@ function showRatingDialog(titleSlug, title) {
     .skip-btn:hover {
       color: var(--lr-text-secondary);
       background: var(--lr-bg-elevated);
+    }
+    .remove-btn:hover {
+      color: var(--lr-error);
+      background: rgba(232, 93, 117, 0.12);
+    }
+    .skip-btn:disabled,
+    .remove-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
     }
   `;
 
@@ -271,6 +286,27 @@ function showRatingDialog(titleSlug, title) {
     buttonsEl.appendChild(btn);
   }
 
+  const footerEl = document.createElement('div');
+  footerEl.className = 'footer-actions';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'remove-btn';
+  removeBtn.textContent = "Don't review";
+  removeBtn.title = 'Remove this problem from the review schedule';
+  removeBtn.addEventListener('click', function () {
+    if (!confirm("Remove this problem from your review schedule? You won't be prompted to review it again.")) return;
+    buttonsEl.querySelectorAll('.rating-btn').forEach(function (b) { b.disabled = true; });
+    skipBtn.disabled = true;
+    removeBtn.disabled = true;
+    chrome.runtime.sendMessage(
+      { type: 'REMOVE_CARD', payload: { titleSlug: titleSlug } },
+      function () {
+        host.remove();
+        showConfirmationToast('', 'Removed from reviews');
+      }
+    );
+  });
+
   const skipBtn = document.createElement('button');
   skipBtn.className = 'skip-btn';
   skipBtn.textContent = 'Skip';
@@ -278,11 +314,14 @@ function showRatingDialog(titleSlug, title) {
     host.remove();
   });
 
+  footerEl.appendChild(removeBtn);
+  footerEl.appendChild(skipBtn);
+
   dialog.appendChild(titleEl);
   dialog.appendChild(problemEl);
   dialog.appendChild(promptEl);
   dialog.appendChild(buttonsEl);
-  dialog.appendChild(skipBtn);
+  dialog.appendChild(footerEl);
   overlay.appendChild(dialog);
 
   shadow.appendChild(createFontLink());
@@ -299,7 +338,7 @@ function showRatingDialog(titleSlug, title) {
  * Shows a small confirmation toast in the bottom-right corner
  * after a successful rating. Auto-dismisses after ~2.5 seconds.
  */
-function showConfirmationToast(nextDateLabel) {
+function showConfirmationToast(nextDateLabel, mainLabel) {
   var toastHost = document.createElement('div');
   toastHost.id = 'ankleet-confirm-host';
   document.body.appendChild(toastHost);
@@ -365,7 +404,7 @@ function showConfirmationToast(nextDateLabel) {
 
   var label = document.createElement('span');
   label.className = 'label';
-  label.textContent = 'Review captured';
+  label.textContent = mainLabel || 'Review captured';
 
   toast.appendChild(check);
   toast.appendChild(label);

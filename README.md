@@ -20,11 +20,11 @@ After each review, rate your recall and AnkLeet computes when you should revisit
 | Rating | First review | Subsequent reviews |
 |--------|-------------|-------------------|
 | Again | 1 day | Reset to 1 day |
-| Hard | 2 days | interval × 1.2 |
-| Good | 4 days | interval × ease (default 2.5) |
-| Easy | 7 days | interval × ease × 1.3 |
+| Hard | 3 days | interval × 1.5 |
+| Good | 7 days | interval × ease (default 2.6) |
+| Easy | 14 days | interval × ease × 1.5 |
 
-Each card tracks its own **ease factor** (starting at 2.5) that adapts based on your ratings — cards you struggle with get shorter intervals, cards you find easy get progressively longer ones. A card rated Good repeatedly grows as: 4d → 10d → 25d → 63d → 158d.
+Each card tracks its own **ease factor** (starting at 2.6) that adapts based on your ratings — cards you struggle with get shorter intervals, cards you find easy get progressively longer ones. A card rated Good repeatedly grows as: 7d → 18d → 47d → 122d.
 
 The extension badge shows how many reviews are due today.
 

@@ -1,0 +1,17 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\setlist[itemize]{leftmargin=*, topsep=2pt, itemsep=1pt}
+
+\begin{document}
+
+\noindent\textbf{AnkLeet} \hfill \textit{Chrome Extension --- JavaScript, IndexedDB, OpenRouter API} \\
+\textit{Spaced-repetition tool that tracks LeetCode submissions and resurfaces problems for review}
+\begin{itemize}
+  \item Built a Manifest V3 Chrome extension that intercepts LeetCode GraphQL submissions, persists problem state in IndexedDB, and surfaces a daily review queue with a custom day-scale spaced-repetition algorithm (adaptive ease factor, load-balanced to cap reviews at 3 per day).
+  \item Integrated multi-model AI assistance via OpenRouter (Claude, GPT, DeepSeek), with model-aware prompt engineering that enforces Socratic-style hints on weaker instruction-following models without revealing solutions.
+  \item Designed an isolated content-script architecture using Shadow DOM and bundled local fonts to prevent style bleed and eliminate render-blocking external requests, cutting popup open time from seconds to instant.
+\end{itemize}
+
+\end{document}

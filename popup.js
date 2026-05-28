@@ -73,14 +73,14 @@ function aggregateTodayActivity(submissions) {
 
 // ── Activity Rendering ──
 
-function renderTodayActivity(submissions) {
+function renderTodayActivity(submissions, emptyMessage) {
   const listEl = document.getElementById('activity-list');
   if (!listEl) return;
 
   const activities = aggregateTodayActivity(submissions);
 
   if (activities.length === 0) {
-    listEl.innerHTML = '<div class="empty-state">No activity today</div>';
+    listEl.innerHTML = '<div class="empty-state">' + (emptyMessage || 'No activity today') + '</div>';
     return;
   }
 
@@ -116,8 +116,50 @@ function renderTodayActivity(submissions) {
 
 // ── Activity Grid ──
 
+let selectedActivityDay = null; // YYYY-MM-DD or null for today
+
 function toLocalDateStr(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function formatDayLabel(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function updateGridSelection() {
+  const cells = document.querySelectorAll('#activity-grid .grid-cell');
+  cells.forEach(c => {
+    if (c.dataset.date === selectedActivityDay) c.classList.add('selected');
+    else c.classList.remove('selected');
+  });
+}
+
+function selectActivityDay(dateStr, isToday) {
+  selectedActivityDay = isToday ? null : dateStr;
+  updateGridSelection();
+
+  const titleEl = document.getElementById('activity-list-title');
+  const backBtn = document.getElementById('activity-back-today');
+  const listEl = document.getElementById('activity-list');
+
+  if (isToday) {
+    if (titleEl) titleEl.textContent = "Today's Activity";
+    if (backBtn) backBtn.style.display = 'none';
+  } else {
+    if (titleEl) titleEl.textContent = 'Activity — ' + formatDayLabel(dateStr);
+    if (backBtn) backBtn.style.display = 'inline-flex';
+  }
+
+  if (listEl) listEl.innerHTML = '<div class="empty-state">Loading...</div>';
+
+  const msgType = isToday ? 'GET_TODAY_SUBMISSIONS' : 'GET_DAY_SUBMISSIONS';
+  const payload = isToday ? undefined : { date: dateStr };
+  chrome.runtime.sendMessage({ type: msgType, payload }, response => {
+    const submissions = (response && response.submissions) ? response.submissions : [];
+    const emptyMsg = isToday ? 'No activity today' : 'No activity on ' + formatDayLabel(dateStr);
+    renderTodayActivity(submissions, emptyMsg);
+  });
 }
 
 function renderActivityGrid(counts) {
@@ -164,14 +206,17 @@ function renderActivityGrid(counts) {
     const cell = document.createElement('div');
     cell.className = 'grid-cell';
     cell.dataset.level = level;
+    cell.dataset.date = dateStr;
     const d = new Date(dateStr + 'T00:00:00');
     const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     cell.dataset.tooltip = label + ': ' + count + ' submission' + (count === 1 ? '' : 's');
+    const isToday = idx === 13;
+    cell.addEventListener('click', () => selectActivityDay(dateStr, isToday));
+    if (selectedActivityDay === dateStr) cell.classList.add('selected');
     gridEl.appendChild(cell);
 
     const labelEl = document.createElement('div');
     labelEl.className = 'grid-label';
-    const isToday = idx === 13;
     if (isToday) {
       labelEl.classList.add('today');
       labelEl.textContent = 'Today';
@@ -199,8 +244,12 @@ function loadDashboard() {
     });
   });
 
+  const activeDay = selectedActivityDay;
   const submissionsPromise = new Promise(resolve => {
-    chrome.runtime.sendMessage({ type: 'GET_TODAY_SUBMISSIONS' }, response => {
+    const msg = activeDay
+      ? { type: 'GET_DAY_SUBMISSIONS', payload: { date: activeDay } }
+      : { type: 'GET_TODAY_SUBMISSIONS' };
+    chrome.runtime.sendMessage(msg, response => {
       resolve((response && response.submissions) ? response.submissions : []);
     });
   });
@@ -209,7 +258,10 @@ function loadDashboard() {
 
   Promise.all([statsPromise, submissionsPromise]).then(([stats, submissions]) => {
     renderStats(stats);
-    renderTodayActivity(submissions);
+    const emptyMsg = activeDay
+      ? 'No activity on ' + formatDayLabel(activeDay)
+      : 'No activity today';
+    renderTodayActivity(submissions, emptyMsg);
   }).catch(() => {
     const listEl = document.getElementById('activity-list');
     if (listEl) listEl.innerHTML = '<div class="empty-state">Failed to load data</div>';
@@ -295,6 +347,32 @@ function renderReviewQueue(cards) {
       badge.textContent = card.difficulty;
       titleRow.appendChild(badge);
     }
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'card-remove-btn';
+    removeBtn.title = 'Remove from review schedule';
+    removeBtn.setAttribute('aria-label', 'Remove from review schedule');
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      if (!confirm('Remove "' + displayTitle + '" from your review schedule?')) return;
+      removeBtn.disabled = true;
+      ratingRow.querySelectorAll('.rating-btn').forEach(b => { b.disabled = true; });
+      chrome.runtime.sendMessage(
+        { type: 'REMOVE_CARD', payload: { titleSlug: card.titleSlug } },
+        () => {
+          removeCard(cardEl, () => {
+            const remaining = listEl.querySelectorAll('.review-card').length;
+            updateReviewCountHeader(remaining);
+            if (remaining === 0) {
+              const emptyEl2 = document.getElementById('review-empty');
+              if (emptyEl2) emptyEl2.style.display = '';
+            }
+            loadDashboard();
+          });
+        }
+      );
+    });
+    titleRow.appendChild(removeBtn);
 
     cardEl.appendChild(titleRow);
 
@@ -469,6 +547,15 @@ function importData(file) {
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   loadDashboard();
+
+  // Wire "Back to today" button in the activity section
+  const backBtn = document.getElementById('activity-back-today');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      const today = toLocalDateStr(new Date());
+      selectActivityDay(today, true);
+    });
+  }
 
   // Wire settings save button
   const saveBtn = document.getElementById('save-settings');

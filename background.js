@@ -6,20 +6,20 @@
 //
 // Card state: { interval, ease, reps, lapses }
 //   interval — current interval in days (next review = last_review + interval)
-//   ease     — multiplier for interval growth (starts at 2.5, min 1.3)
+//   ease     — multiplier for interval growth (starts at 2.6, min 1.3)
 //   reps     — consecutive successful reviews (Good or Easy)
 //   lapses   — total times the card was rated Again
 //
 // Rating multipliers applied to the current interval:
 //   Again → reset to 1 day, ease -= 0.2
-//   Hard  → interval * 1.2, ease -= 0.15
+//   Hard  → interval * 1.5, ease -= 0.15
 //   Good  → interval * ease
-//   Easy  → interval * ease * 1.3, ease += 0.15
+//   Easy  → interval * ease * 1.5, ease += 0.2
 //
 // First review intervals (reps === 0):
-//   Again: 1d, Hard: 2d, Good: 4d, Easy: 7d
+//   Again: 1d, Hard: 3d, Good: 7d, Easy: 14d
 
-const SRS_DEFAULTS = { interval: 0, ease: 2.5, reps: 0, lapses: 0 };
+const SRS_DEFAULTS = { interval: 0, ease: 2.6, reps: 0, lapses: 0 };
 
 function srsSchedule(card, ratingName) {
   let { interval, ease, reps, lapses } = { ...SRS_DEFAULTS, ...card };
@@ -27,14 +27,14 @@ function srsSchedule(card, ratingName) {
 
   if (reps === 0) {
     // First review — use fixed starting intervals
-    const firstIntervals = { Again: 1, Hard: 2, Good: 4, Easy: 7 };
+    const firstIntervals = { Again: 1, Hard: 3, Good: 7, Easy: 14 };
     newInterval = firstIntervals[ratingName];
     if (ratingName === 'Again') {
       ease = Math.max(1.3, ease - 0.2);
       lapses++;
       reps = 0;
     } else {
-      if (ratingName === 'Easy') ease = Math.min(3.5, ease + 0.15);
+      if (ratingName === 'Easy') ease = Math.min(3.5, ease + 0.2);
       reps = 1;
     }
   } else {
@@ -46,7 +46,7 @@ function srsSchedule(card, ratingName) {
         reps = 0;
         break;
       case 'Hard':
-        newInterval = Math.max(2, Math.round(interval * 1.2));
+        newInterval = Math.max(interval + 1, Math.round(interval * 1.5));
         ease = Math.max(1.3, ease - 0.15);
         reps++;
         break;
@@ -55,8 +55,8 @@ function srsSchedule(card, ratingName) {
         reps++;
         break;
       case 'Easy':
-        newInterval = Math.max(interval + 1, Math.round(interval * ease * 1.3));
-        ease = Math.min(3.5, ease + 0.15);
+        newInterval = Math.max(interval + 1, Math.round(interval * ease * 1.5));
+        ease = Math.min(3.5, ease + 0.2);
         reps++;
         break;
     }
@@ -109,6 +109,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true; // async response
+  }
+
+  if (message.type === 'REMOVE_CARD') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' });
+          return;
+        }
+      }
+      try {
+        await deleteCard(db, message.payload.titleSlug);
+        getDueToday(db).then(cards => updateBadge(cards.length)).catch(() => {});
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true;
   }
 
   if (message.type === 'GET_DUE_TODAY') {
@@ -193,6 +212,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           counts[day] = (counts[day] || 0) + 1;
         }
         sendResponse({ counts });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'GET_DAY_SUBMISSIONS') {
+    (async () => {
+      if (!db) {
+        try { db = await openDatabase(); } catch (err) {
+          sendResponse({ error: 'Failed to open database' }); return;
+        }
+      }
+      try {
+        const dateStr = message.payload?.date;
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          sendResponse({ error: 'Invalid date' });
+          return;
+        }
+        const start = new Date(dateStr + 'T00:00:00');
+        const end = new Date(dateStr + 'T00:00:00');
+        end.setDate(end.getDate() + 1);
+        const range = IDBKeyRange.bound(start.getTime(), end.getTime() - 1);
+        const submissions = await new Promise((resolve, reject) => {
+          const tx = db.transaction(['submissions'], 'readonly');
+          const idx = tx.objectStore('submissions').index('capturedAt');
+          const req = idx.getAll(range);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = (e) => reject(e.target.error);
+        });
+        sendResponse({ submissions });
       } catch (err) {
         sendResponse({ error: err.message });
       }
@@ -712,6 +763,19 @@ function putCard(database, card) {
     const store = tx.objectStore('cards');
     const req = store.put(card);
     req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/**
+ * Deletes a card from the cards store, removing it from the review schedule.
+ */
+function deleteCard(database, titleSlug) {
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(['cards'], 'readwrite');
+    const store = tx.objectStore('cards');
+    const req = store.delete(titleSlug);
+    req.onsuccess = () => resolve();
     req.onerror = (e) => reject(e.target.error);
   });
 }

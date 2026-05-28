@@ -74,6 +74,62 @@
       .join(' ');
   }
 
+  function attachResizeBehavior(handle, panel) {
+    const MIN_W = 320;
+    const MIN_H = 360;
+    let startX = 0;
+    let startY = 0;
+    let startW = 0;
+    let startH = 0;
+    let activePointer = null;
+
+    function onMove(e) {
+      if (e.pointerId !== activePointer) return;
+      // Panel is anchored bottom-right, so moving up-left grows it.
+      const dx = startX - e.clientX;
+      const dy = startY - e.clientY;
+      const maxW = window.innerWidth - 48;
+      const maxH = window.innerHeight - 108;
+      const newW = Math.max(MIN_W, Math.min(maxW, startW + dx));
+      const newH = Math.max(MIN_H, Math.min(maxH, startH + dy));
+      panel.style.width = newW + 'px';
+      panel.style.height = newH + 'px';
+    }
+
+    function onUp(e) {
+      if (e.pointerId !== activePointer) return;
+      activePointer = null;
+      panel.classList.remove('resizing');
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onUp, true);
+      try {
+        localStorage.setItem('ankleet-chat-size', JSON.stringify({
+          w: panel.offsetWidth,
+          h: panel.offsetHeight
+        }));
+      } catch (_) {}
+    }
+
+    handle.addEventListener('pointerdown', function (e) {
+      if (activePointer !== null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      activePointer = e.pointerId;
+      const rect = panel.getBoundingClientRect();
+      startX = e.clientX;
+      startY = e.clientY;
+      startW = rect.width;
+      startH = rect.height;
+      panel.classList.add('resizing');
+      // Listen on window (with capture) so events fire even if the cursor
+      // leaves the small handle area or drifts onto LeetCode's own UI.
+      window.addEventListener('pointermove', onMove, true);
+      window.addEventListener('pointerup', onUp, true);
+      window.addEventListener('pointercancel', onUp, true);
+    });
+  }
+
   // --- Shadow DOM injection ---
 
   function injectChatPanel(titleSlug) {
@@ -165,6 +221,10 @@
         right: 24px;
         width: 400px;
         height: 540px;
+        min-width: 320px;
+        min-height: 360px;
+        max-width: calc(100vw - 48px);
+        max-height: calc(100vh - 108px);
         border-radius: var(--lr-radius-panel);
         background: var(--lr-bg-surface);
         color: var(--lr-text-primary);
@@ -185,12 +245,47 @@
         transform: translateY(0) scale(1);
         pointer-events: auto;
       }
+      .chat-panel.resizing {
+        transition: none;
+        user-select: none;
+      }
+
+      /* ── Resize handle (top-left, panel anchored bottom-right) ── */
+      .resize-handle {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 28px;
+        height: 28px;
+        cursor: nwse-resize;
+        z-index: 20;
+        border-top-left-radius: var(--lr-radius-panel);
+        border-bottom-right-radius: 10px;
+        background: var(--lr-bg-elevated);
+        border-right: 1px solid var(--lr-border);
+        border-bottom: 1px solid var(--lr-border);
+        touch-action: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--lr-text-secondary);
+        font-family: var(--lr-font);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1;
+        user-select: none;
+        transition: background 0.15s, color 0.15s;
+      }
+      .resize-handle:hover {
+        background: var(--lr-accent);
+        color: #0f0f13;
+      }
 
       /* ── Panel Header ── */
       .panel-header {
         display: flex;
         align-items: center;
-        padding: 14px 16px;
+        padding: 14px 16px 14px 38px;
         border-bottom: 1px solid var(--lr-border);
         flex-shrink: 0;
         gap: 10px;
@@ -582,9 +677,29 @@
     inputArea.appendChild(loadingEl);
     inputArea.appendChild(errorEl);
 
+    // Resize handle (top-left corner — panel is anchored bottom-right)
+    const resizeHandle = document.createElement('div');
+    resizeHandle.className = 'resize-handle';
+    resizeHandle.title = 'Drag to resize';
+    resizeHandle.textContent = '⤢'; // ⤢ NORTH WEST AND SOUTH EAST ARROW
+    attachResizeBehavior(resizeHandle, chatPanel);
+
+    chatPanel.appendChild(resizeHandle);
     chatPanel.appendChild(header);
     chatPanel.appendChild(messagesArea);
     chatPanel.appendChild(inputArea);
+
+    // Restore previously saved size
+    try {
+      const saved = localStorage.getItem('ankleet-chat-size');
+      if (saved) {
+        const size = JSON.parse(saved);
+        if (size && typeof size.w === 'number' && typeof size.h === 'number') {
+          chatPanel.style.width = size.w + 'px';
+          chatPanel.style.height = size.h + 'px';
+        }
+      }
+    } catch (_) {}
 
     shadowRoot.appendChild(fontLink);
     shadowRoot.appendChild(style);
