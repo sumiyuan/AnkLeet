@@ -495,8 +495,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.set({ settings: { captureEnabled: true } });
+chrome.runtime.onInstalled.addListener(async () => {
+  // Merge defaults into any existing settings instead of overwriting them.
+  // onInstalled also fires on extension updates and chrome_update, so a plain
+  // set() here would wipe the saved API key and other settings on restart.
+  const { settings: existing } = await chrome.storage.local.get('settings');
+  const merged = { captureEnabled: true, ...existing };
+  await chrome.storage.local.set({ settings: merged });
 });
 
 // Alarm listener — MUST be registered at top level (module scope).
