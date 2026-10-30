@@ -7,111 +7,124 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
-    <button class="tab-btn" data-tab="reviews">Reviews</button>
-    <button class="tab-btn" data-tab="settings">Settings</button>
-  </div>
+  <header class="app-bar">
+    <h1 class="brand">
+      <img class="brand-mark" src="icons/icon48.png" width="24" height="24" alt="">
+      AnkLeet
+    </h1>
+    <nav class="tab-bar" aria-label="Sections">
+      <button class="tab-btn active" data-tab="dashboard" type="button">Today</button>
+      <button class="tab-btn" data-tab="reviews" type="button">Reviews <span id="tab-due-count" class="tab-count num" hidden></span></button>
+      <button class="tab-btn" data-tab="settings" type="button">Settings</button>
+    </nav>
+  </header>
 
-  <div id="tab-dashboard" class="tab-panel active">
-    <div class="stats-bar">
-      <div class="stat-item">
-        <span class="stat-value" id="stat-retention">&mdash;</span>
-        <span class="stat-label">Retention</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-value" id="stat-reviews">&mdash;</span>
-        <span class="stat-label">Reviews</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-value" id="stat-streak">&mdash;</span>
-        <span class="stat-label">Streak</span>
-      </div>
-    </div>
-    <div class="activity-grid-section">
-      <div class="activity-grid-header">
-        <span class="activity-grid-title">Last 14 Days</span>
-        <span class="activity-grid-total" id="grid-total"></span>
-      </div>
-      <div class="activity-grid" id="activity-grid"></div>
-      <div class="activity-grid-labels" id="grid-labels"></div>
-      <div class="activity-grid-legend">
-        <span class="legend-label">Less</span>
-        <span class="legend-cell" data-level="0"></span>
-        <span class="legend-cell" data-level="1"></span>
-        <span class="legend-cell" data-level="2"></span>
-        <span class="legend-cell" data-level="3"></span>
-        <span class="legend-cell" data-level="4"></span>
-        <span class="legend-label">More</span>
-      </div>
-    </div>
-    <div class="section-header">
-      <span id="activity-list-title">Today's Activity</span>
-      <button id="activity-back-today" class="activity-back-today" style="display:none;" type="button">Back to today</button>
-    </div>
-    <div id="activity-list" class="activity-list">
-      <div class="empty-state">Loading...</div>
-    </div>
-  </div>
-
-  <div id="tab-reviews" class="tab-panel">
-    <div class="reviews-header">
-      <span id="review-count" class="reviews-due-label">Loading...</span>
-    </div>
-    <div id="review-list" class="review-list"></div>
-    <div id="review-empty" class="empty-state" style="display:none;">All caught up!</div>
-  </div>
-
-  <div id="tab-settings" class="tab-panel">
-    <div class="settings-panel">
-      <div class="settings-title">Settings</div>
-
-      <div class="form-group">
-        <label class="form-label" for="api-key">OpenRouter API Key</label>
-        <input type="password" id="api-key" class="form-input" placeholder="sk-or-...">
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="ai-model">AI Model</label>
-        <select id="ai-model" class="form-input">
-          <option value="anthropic/claude-haiku-4.5">Claude Haiku 4.5 (fast, cheap)</option>
-          <option value="anthropic/claude-sonnet-4">Claude Sonnet 4 (balanced)</option>
-          <option value="deepseek/deepseek-chat-v3-0324">DeepSeek V3 (fast, cheap)</option>
-          <option value="deepseek/deepseek-r1">DeepSeek R1 (reasoning)</option>
-          <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (fast, cheap)</option>
-          <option value="openai/gpt-4o-mini">GPT-4o Mini (fast, cheap)</option>
-          <option value="openai/gpt-4o">GPT-4o (balanced)</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Notifications</label>
-        <label class="checkbox-label">
-          <input type="checkbox" id="notif-enabled">
-          Enable review reminders
-        </label>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="notif-time">Reminder Time</label>
-        <input type="time" id="notif-time" class="form-input" value="09:00">
-      </div>
-
-      <button id="save-settings" class="save-btn">Save Settings</button>
-      <span id="save-status" class="save-status"></span>
-
-      <div class="data-section">
-        <div class="data-section-title">Data Transfer</div>
-        <p class="data-section-desc">Export your data to transfer between browsers. Includes problem history, review schedule, and conversations.</p>
-        <div class="data-buttons">
-          <button id="export-data" class="data-btn export-btn">Export Data</button>
-          <button id="import-data" class="data-btn import-btn">Import Data</button>
+  <main>
+    <div id="tab-dashboard" class="tab-panel active">
+      <section class="due-summary" aria-labelledby="due-label">
+        <div class="due-text">
+          <p class="due-line">
+            <span id="due-count" class="due-figure num">&mdash;</span>
+            <span id="due-label" class="due-label">reviews due today</span>
+          </p>
+          <p id="due-note" class="due-note">&nbsp;</p>
         </div>
-        <input type="file" id="import-file" accept=".json" style="display:none">
-        <span id="data-status" class="save-status"></span>
+        <button id="start-reviews" class="btn btn-primary" type="button" hidden>Start reviews</button>
+      </section>
+
+      <dl class="kpi-strip">
+        <div class="kpi">
+          <dt>Streak</dt>
+          <dd><span class="num" id="stat-streak">&mdash;</span><span class="unit" id="stat-streak-unit"></span></dd>
+        </div>
+        <div class="kpi">
+          <dt>Recalled</dt>
+          <dd><span class="num" id="stat-retention">&mdash;</span><span class="unit" id="stat-retention-unit"></span></dd>
+        </div>
+        <div class="kpi">
+          <dt>Reviews done</dt>
+          <dd><span class="num" id="stat-reviews">&mdash;</span></dd>
+        </div>
+      </dl>
+
+      <section class="block" aria-labelledby="chart-title">
+        <div class="block-head">
+          <h2 id="chart-title">Submissions, last 14 days</h2>
+          <span class="meta num" id="grid-total"></span>
+        </div>
+        <div class="chart">
+          <div class="chart-plot">
+            <div class="chart-grid" id="chart-grid" aria-hidden="true"></div>
+            <div class="chart-bars" id="activity-grid"></div>
+          </div>
+          <div class="chart-axis" id="grid-labels" aria-hidden="true"></div>
+        </div>
+      </section>
+
+      <section class="block" aria-labelledby="activity-list-title">
+        <div class="block-head">
+          <h2 id="activity-list-title">Problems today</h2>
+          <button id="activity-back-today" class="link-btn" type="button" hidden>Back to today</button>
+        </div>
+        <ul id="activity-list" class="rows">
+          <li class="rows-empty">Loading&hellip;</li>
+        </ul>
+      </section>
+    </div>
+
+    <div id="tab-reviews" class="tab-panel">
+      <div class="block-head screen-head">
+        <h2>Due today</h2>
+        <span id="review-count" class="meta">Loading&hellip;</span>
+      </div>
+      <ul id="review-list" class="review-list"></ul>
+      <div id="review-empty" class="review-empty" hidden>
+        <p class="review-empty-title">Nothing due today.</p>
+        <p id="review-empty-note" class="review-empty-note"></p>
       </div>
     </div>
-  </div>
+
+    <div id="tab-settings" class="tab-panel">
+      <section class="settings-section" aria-labelledby="ai-title">
+        <h2 id="ai-title">AI tutor</h2>
+
+        <div class="field">
+          <label for="api-key">OpenRouter API key</label>
+          <input type="password" id="api-key" class="input" placeholder="sk-or-…" autocomplete="off" spellcheck="false" aria-describedby="api-key-help">
+          <p id="api-key-help" class="field-help">Create one at <a href="https://openrouter.ai/keys" id="openrouter-link">openrouter.ai/keys</a>. It never leaves this browser except to call OpenRouter.</p>
+        </div>
+
+        <div class="field">
+          <label for="ai-model">Model</label>
+          <select id="ai-model" class="input">
+            <option value="anthropic/claude-haiku-4.5">Claude Haiku 4.5 (fast, cheap)</option>
+            <option value="anthropic/claude-sonnet-4">Claude Sonnet 4 (balanced)</option>
+            <option value="deepseek/deepseek-chat-v3-0324">DeepSeek V3 (fast, cheap)</option>
+            <option value="deepseek/deepseek-r1">DeepSeek R1 (reasoning)</option>
+            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (fast, cheap)</option>
+            <option value="openai/gpt-4o-mini">GPT-4o Mini (fast, cheap)</option>
+            <option value="openai/gpt-4o">GPT-4o (balanced)</option>
+          </select>
+        </div>
+
+        <div class="actions">
+          <button id="save-settings" class="btn btn-primary" type="button">Save</button>
+          <span id="save-status" class="status-stamp" role="status"></span>
+        </div>
+      </section>
+
+      <section class="settings-section" aria-labelledby="data-title">
+        <h2 id="data-title">Your data</h2>
+        <p class="section-desc">Everything is stored in this browser. Export a file to move your history, review schedule and chats; importing a file replaces what is here.</p>
+        <div class="actions">
+          <button id="export-data" class="btn" type="button">Export</button>
+          <button id="import-data" class="btn" type="button">Import…</button>
+          <span id="data-status" class="status-stamp" role="status"></span>
+        </div>
+        <input type="file" id="import-file" accept=".json" hidden>
+      </section>
+    </div>
+  </main>
 
   <script src="popup.js"></script>
 </body>

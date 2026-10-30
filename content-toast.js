@@ -2,41 +2,13 @@
 // World: ISOLATED (default) — runs at document_end so document.body is ready.
 // Shows a brief toast for wrong submissions, or a rating dialog for accepted ones.
 // Shadow DOM prevents LeetCode's styles from bleeding in.
+// LR_TOKENS and lrPrepareHost come from content-theme.js, loaded just before this file.
 
-// ── Shared design tokens injected into every Shadow DOM ──
-const LR_TOKENS = `
-  :host {
-    --lr-bg-deep: #0f0f13;
-    --lr-bg-surface: #1a1a21;
-    --lr-bg-elevated: #242430;
-    --lr-border: #2e2e3a;
-    --lr-border-focus: #4a4a5c;
-    --lr-text-primary: #e8e8ed;
-    --lr-text-secondary: #8888a0;
-    --lr-text-muted: #5c5c72;
-    --lr-accent: #F0A830;
-    --lr-accent-hover: #D89620;
-    --lr-accent-glow: rgba(240, 168, 48, 0.15);
-    --lr-success: #3DBAA2;
-    --lr-error: #E85D75;
-    --lr-hint: #8B7CF6;
-    --lr-code-bg: #12121a;
-    --lr-radius-panel: 14px;
-    --lr-radius-btn: 8px;
-    --lr-radius-sm: 5px;
-    --lr-font: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    --lr-font-mono: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
-  }
-  * { box-sizing: border-box; }
-`;
+const LR_SVG_CLOSE = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+const LR_SVG_CHECK = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-const LR_FONT_LINK = 'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap';
-
-function createFontLink() {
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = LR_FONT_LINK;
-  return link;
+function lrPlural(n, word) {
+  return n + ' ' + word + (n === 1 ? '' : 's');
 }
 
 /**
@@ -48,6 +20,7 @@ function showToast(message) {
 
   const host = document.createElement('div');
   host.id = 'ankleet-toast-host';
+  lrPrepareHost(host);
   document.body.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -62,19 +35,18 @@ function showToast(message) {
       right: 24px;
       background: var(--lr-bg-surface);
       color: var(--lr-text-primary);
-      padding: 12px 18px;
-      border-radius: var(--lr-radius-btn);
+      border: 1px solid var(--lr-border);
+      padding: 10px 14px;
+      border-radius: var(--lr-radius-panel);
       font-family: var(--lr-font);
-      font-size: 13px;
-      font-weight: 500;
+      font-size: 14px;
+      line-height: 20px;
       z-index: 2147483647;
       opacity: 1;
       transform: translateY(0);
       transition: opacity 0.3s ease, transform 0.3s ease;
       pointer-events: none;
-      box-shadow:
-        0 4px 16px rgba(0,0,0,0.4),
-        0 0 0 1px var(--lr-border);
+      box-shadow: var(--lr-shadow);
     }
     .toast.fade {
       opacity: 0;
@@ -84,9 +56,9 @@ function showToast(message) {
 
   const toast = document.createElement('div');
   toast.className = 'toast';
+  toast.setAttribute('role', 'status');
   toast.textContent = message;
 
-  shadow.appendChild(createFontLink());
   shadow.appendChild(style);
   shadow.appendChild(toast);
 
@@ -99,12 +71,14 @@ function showToast(message) {
 /**
  * Shows a rating dialog for the user to rate how the review went.
  * Sends RATE_REVIEW to the background when a button is clicked.
+ * nextIntervals: { Again, Hard, Good, Easy } in days, shown on each button.
  */
-function showRatingDialog(titleSlug, title) {
+function showRatingDialog(titleSlug, title, nextIntervals) {
   removeHost();
 
   const host = document.createElement('div');
   host.id = 'ankleet-toast-host';
+  lrPrepareHost(host);
   document.body.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -118,12 +92,10 @@ function showRatingDialog(titleSlug, title) {
       justify-content: center;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
+      background: var(--lr-scrim);
       z-index: 2147483647;
       font-family: var(--lr-font);
-      animation: overlay-in 0.2s ease;
+      animation: overlay-in 0.15s ease;
     }
     @keyframes overlay-in {
       from { opacity: 0; }
@@ -132,97 +104,115 @@ function showRatingDialog(titleSlug, title) {
     .dialog {
       background: var(--lr-bg-surface);
       color: var(--lr-text-primary);
+      border: 1px solid var(--lr-border);
       border-radius: var(--lr-radius-panel);
-      padding: 28px 32px;
-      max-width: 380px;
-      width: 90%;
-      box-shadow:
-        0 12px 48px rgba(0,0,0,0.5),
-        0 0 0 1px var(--lr-border);
-      text-align: center;
-      animation: dialog-in 0.25s cubic-bezier(0.34, 1.3, 0.64, 1);
+      padding: 20px;
+      width: min(400px, calc(100vw - 32px));
+      box-shadow: var(--lr-shadow);
+      animation: dialog-in 0.2s ease-out;
     }
     @keyframes dialog-in {
-      from { opacity: 0; transform: scale(0.95) translateY(8px); }
-      to { opacity: 1; transform: scale(1) translateY(0); }
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
-    .dialog-title {
-      font-size: 15px;
-      font-weight: 700;
-      margin-bottom: 6px;
-      color: var(--lr-accent);
-      letter-spacing: -0.01em;
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: 500;
+      color: var(--lr-success);
     }
     .dialog-problem {
-      font-size: 13px;
-      color: var(--lr-text-secondary);
-      margin-bottom: 20px;
+      margin: 4px 0 0;
+      font-size: 18px;
+      line-height: 24px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .dialog-prompt {
-      font-size: 13px;
-      color: var(--lr-text-muted);
-      margin-bottom: 16px;
+      margin: 16px 0 10px;
+      font-size: 14px;
+      line-height: 20px;
+      color: var(--lr-text-secondary);
     }
+    /* One continuous rating bar, the same as the popup's review list:
+       each section lights up red, orange, green or blue on hover */
     .rating-buttons {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: var(--lr-bg-elevated);
+      border-radius: 12px;
+      overflow: hidden;
     }
     .rating-btn {
       all: initial;
-      display: inline-flex;
+      --rating: var(--lr-text-primary);
+      display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 9px 18px;
-      border-radius: var(--lr-radius-btn);
+      gap: 1px;
+      padding: 8px 0 7px;
+      background: transparent;
+      border-radius: 0;
       font-family: var(--lr-font);
-      font-size: 13px;
-      font-weight: 600;
+      color: var(--lr-text-primary);
       cursor: pointer;
-      transition: opacity 0.15s, transform 0.15s;
-      color: #fff;
+      transition: background 0.15s, transform 0.1s;
     }
-    .rating-btn:hover { opacity: 0.88; transform: translateY(-2px); }
-    .rating-btn:active { transform: translateY(0); }
-    .rating-btn:disabled { opacity: 0.35; cursor: default; transform: none; }
-    .rating-btn[data-rating="Again"] { background: var(--lr-error); }
-    .rating-btn[data-rating="Hard"]  { background: #D4893F; }
-    .rating-btn[data-rating="Good"]  { background: var(--lr-success); }
-    .rating-btn[data-rating="Easy"]  { background: #5B8DEF; }
+    .rating-btn[data-rating="Again"] { --rating: var(--lr-rate-again); }
+    .rating-btn[data-rating="Hard"]  { --rating: var(--lr-rate-hard); }
+    .rating-btn[data-rating="Good"]  { --rating: var(--lr-rate-good); }
+    .rating-btn[data-rating="Easy"]  { --rating: var(--lr-rate-easy); }
+    .rating-btn + .rating-btn { border-left: 1px solid var(--lr-border); }
+    .rating-btn:hover,
+    .rating-btn:focus-visible { background: color-mix(in srgb, var(--rating) 26%, transparent); }
+    .rating-btn .rating-name { color: var(--rating); }
+    .rating-btn:active { background: color-mix(in srgb, var(--rating) 38%, transparent); }
+    .rating-btn:focus-visible { outline: none; }
+    .rating-btn:disabled { opacity: 0.45; cursor: default; background: transparent; }
+    .rating-name { font-size: 14px; line-height: 20px; font-weight: 600; transition: color 0.15s; }
+    .rating-gap {
+      font-size: 12px;
+      line-height: 16px;
+      color: var(--lr-text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
     .footer-actions {
       display: flex;
-      justify-content: center;
-      gap: 16px;
+      justify-content: space-between;
       margin-top: 14px;
     }
     .skip-btn,
     .remove-btn {
       all: initial;
       display: inline-block;
-      padding: 6px 12px;
+      padding: 4px 0;
       font-family: var(--lr-font);
-      font-size: 12px;
-      color: var(--lr-text-muted);
-      cursor: pointer;
-      background: none;
-      border-radius: var(--lr-radius-sm);
-      transition: color 0.15s, background 0.15s;
-    }
-    .skip-btn:hover {
+      font-size: 13px;
+      line-height: 18px;
       color: var(--lr-text-secondary);
-      background: var(--lr-bg-elevated);
+      cursor: pointer;
+      text-decoration: underline;
+      text-decoration-color: transparent;
+      text-underline-offset: 3px;
+      transition: color 0.15s, text-decoration-color 0.15s;
     }
-    .remove-btn:hover {
-      color: var(--lr-error);
-      background: rgba(232, 93, 117, 0.12);
-    }
+    .skip-btn:hover { color: var(--lr-text-primary); text-decoration-color: currentColor; }
+    .remove-btn:hover { color: var(--lr-error); text-decoration-color: currentColor; }
+    .skip-btn:focus-visible,
+    .remove-btn:focus-visible { outline: 2px solid var(--lr-hue); outline-offset: 2px; }
     .skip-btn:disabled,
     .remove-btn:disabled {
-      opacity: 0.35;
+      opacity: 0.45;
       cursor: default;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .overlay, .dialog { animation: none; }
     }
   `;
 
@@ -231,29 +221,47 @@ function showRatingDialog(titleSlug, title) {
 
   const dialog = document.createElement('div');
   dialog.className = 'dialog';
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-labelledby', 'lr-dialog-problem');
 
-  const titleEl = document.createElement('div');
-  titleEl.className = 'dialog-title';
-  titleEl.textContent = 'Submission Captured';
+  const statusEl = document.createElement('div');
+  statusEl.className = 'status';
+  statusEl.innerHTML = LR_SVG_CHECK;
+  statusEl.appendChild(document.createTextNode('Accepted'));
 
-  const problemEl = document.createElement('div');
+  const problemEl = document.createElement('h2');
   problemEl.className = 'dialog-problem';
+  problemEl.id = 'lr-dialog-problem';
   const displayTitle = title || titleSlug.replace(/-/g, ' ');
   problemEl.textContent = displayTitle;
 
-  const promptEl = document.createElement('div');
+  const promptEl = document.createElement('p');
   promptEl.className = 'dialog-prompt';
-  promptEl.textContent = 'How did it go?';
+  promptEl.textContent = 'How hard was it to solve? Your rating sets the next review.';
 
   const buttonsEl = document.createElement('div');
   buttonsEl.className = 'rating-buttons';
 
+  const gaps = nextIntervals || {};
   const ratings = ['Again', 'Hard', 'Good', 'Easy'];
   for (const rating of ratings) {
     const btn = document.createElement('button');
     btn.className = 'rating-btn';
     btn.dataset.rating = rating;
-    btn.textContent = rating;
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'rating-name';
+    nameEl.textContent = rating;
+    btn.appendChild(nameEl);
+    if (gaps[rating] != null) {
+      const gapEl = document.createElement('span');
+      gapEl.className = 'rating-gap';
+      gapEl.textContent = lrPlural(gaps[rating], 'day');
+      btn.appendChild(gapEl);
+      btn.setAttribute('aria-label', rating + ', next review in ' + lrPlural(gaps[rating], 'day'));
+    }
+
     btn.addEventListener('click', function () {
       // Disable all buttons
       buttonsEl.querySelectorAll('.rating-btn').forEach(function (b) { b.disabled = true; });
@@ -276,10 +284,10 @@ function showRatingDialog(titleSlug, title) {
             if (diffDays <= 1) {
               nextDateLabel = 'tomorrow';
             } else {
-              nextDateLabel = dueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+              nextDateLabel = dueDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
             }
           }
-          showConfirmationToast(nextDateLabel);
+          showConfirmationToast(nextDateLabel, 'Rated ' + rating);
         }
       );
     });
@@ -291,8 +299,7 @@ function showRatingDialog(titleSlug, title) {
 
   const removeBtn = document.createElement('button');
   removeBtn.className = 'remove-btn';
-  removeBtn.textContent = "Don't review";
-  removeBtn.title = 'Remove this problem from the review schedule';
+  removeBtn.textContent = "Don't review this problem";
   removeBtn.addEventListener('click', function () {
     if (!confirm("Remove this problem from your review schedule? You won't be prompted to review it again.")) return;
     buttonsEl.querySelectorAll('.rating-btn').forEach(function (b) { b.disabled = true; });
@@ -309,7 +316,7 @@ function showRatingDialog(titleSlug, title) {
 
   const skipBtn = document.createElement('button');
   skipBtn.className = 'skip-btn';
-  skipBtn.textContent = 'Skip';
+  skipBtn.textContent = 'Rate later';
   skipBtn.addEventListener('click', function () {
     host.remove();
   });
@@ -317,30 +324,35 @@ function showRatingDialog(titleSlug, title) {
   footerEl.appendChild(removeBtn);
   footerEl.appendChild(skipBtn);
 
-  dialog.appendChild(titleEl);
+  dialog.appendChild(statusEl);
   dialog.appendChild(problemEl);
   dialog.appendChild(promptEl);
   dialog.appendChild(buttonsEl);
   dialog.appendChild(footerEl);
   overlay.appendChild(dialog);
 
-  shadow.appendChild(createFontLink());
   shadow.appendChild(style);
   shadow.appendChild(overlay);
 
-  // Close on overlay click (outside dialog)
+  // Close on overlay click (outside dialog) or Escape
   overlay.addEventListener('click', function (e) {
     if (e.target === overlay) host.remove();
   });
+  overlay.addEventListener('keydown', function (e) {
+    e.stopPropagation(); // keep LeetCode's shortcuts out of the dialog
+    if (e.key === 'Escape') host.remove();
+  });
+  buttonsEl.querySelector('[data-rating="Good"]').focus();
 }
 
 /**
  * Shows a small confirmation toast in the bottom-right corner
- * after a successful rating. Auto-dismisses after ~2.5 seconds.
+ * after a successful rating. Auto-dismisses after ~5 seconds.
  */
 function showConfirmationToast(nextDateLabel, mainLabel) {
   var toastHost = document.createElement('div');
   toastHost.id = 'ankleet-confirm-host';
+  lrPrepareHost(toastHost);
   document.body.appendChild(toastHost);
 
   var shadow = toastHost.attachShadow({ mode: 'closed' });
@@ -351,20 +363,20 @@ function showConfirmationToast(nextDateLabel, mainLabel) {
       all: initial;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       position: fixed;
       bottom: 24px;
       right: 24px;
       background: var(--lr-bg-surface);
       color: var(--lr-text-primary);
-      padding: 14px 20px;
-      border-radius: var(--lr-radius-btn);
+      border: 1px solid var(--lr-border);
+      padding: 10px 14px;
+      border-radius: var(--lr-radius-panel);
       font-family: var(--lr-font);
       font-size: 14px;
+      line-height: 20px;
       z-index: 2147483647;
-      box-shadow:
-        0 4px 16px rgba(0,0,0,0.4),
-        0 0 0 1px var(--lr-border);
+      box-shadow: var(--lr-shadow);
       opacity: 0;
       transform: translateY(8px);
       transition: opacity 0.25s ease, transform 0.25s ease;
@@ -378,33 +390,29 @@ function showConfirmationToast(nextDateLabel, mainLabel) {
       transform: translateY(4px);
     }
     .check {
+      display: inline-flex;
       color: var(--lr-success);
-      font-size: 18px;
-      font-weight: 700;
       flex-shrink: 0;
     }
     .label {
-      color: var(--lr-text-primary);
-      font-weight: 600;
-      font-size: 13px;
+      font-weight: 500;
     }
     .next-date {
-      color: var(--lr-text-muted);
-      font-size: 12px;
-      margin-left: 2px;
+      color: var(--lr-text-secondary);
     }
   `;
 
   var toast = document.createElement('div');
   toast.className = 'confirm-toast';
+  toast.setAttribute('role', 'status');
 
   var check = document.createElement('span');
   check.className = 'check';
-  check.textContent = '\u2713';
+  check.innerHTML = LR_SVG_CHECK;
 
   var label = document.createElement('span');
   label.className = 'label';
-  label.textContent = mainLabel || 'Review captured';
+  label.textContent = mainLabel || 'Review saved';
 
   toast.appendChild(check);
   toast.appendChild(label);
@@ -412,11 +420,10 @@ function showConfirmationToast(nextDateLabel, mainLabel) {
   if (nextDateLabel) {
     var dateSpan = document.createElement('span');
     dateSpan.className = 'next-date';
-    dateSpan.textContent = '\u00b7 Next: ' + nextDateLabel;
+    dateSpan.textContent = 'Next review ' + nextDateLabel;
     toast.appendChild(dateSpan);
   }
 
-  shadow.appendChild(createFontLink());
   shadow.appendChild(style);
   shadow.appendChild(toast);
 
@@ -440,9 +447,9 @@ function removeHost() {
 }
 
 /**
- * If the page was opened via a review link (#ankleet-review),
- * blur the code editor until the user clicks "Reveal".
- * Uses a MutationObserver to wait for the Monaco editor to mount.
+ * If the page was opened via a review link (?ankleet=review),
+ * blur the code editor until the user clicks "Show my code".
+ * Polls for the Monaco editor to mount.
  */
 function maybeBlurEditor() {
   const params = new URLSearchParams(window.location.search);
@@ -462,6 +469,7 @@ function maybeBlurEditor() {
 
     const host = document.createElement('div');
     host.id = BLUR_HOST_ID;
+    lrPrepareHost(host);
     document.body.appendChild(host);
 
     const shadow = host.attachShadow({ mode: 'closed' });
@@ -476,36 +484,47 @@ function maybeBlurEditor() {
         justify-content: center;
         position: absolute;
         inset: 0;
-        background: rgba(15, 15, 19, 0.65);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
+        background: color-mix(in srgb, var(--lr-bg-surface) 70%, transparent);
+        /* The blur is the feature: it hides the old solution. taste-skill-ignore */
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px); /* taste-skill-ignore */
         z-index: 10;
         font-family: var(--lr-font);
+        text-align: center;
+        padding: 0 24px;
       }
       .blur-message {
         color: var(--lr-text-primary);
-        font-size: 15px;
-        font-weight: 500;
-        margin-bottom: 16px;
-        text-align: center;
-        padding: 0 20px;
+        font-size: 16px;
+        line-height: 22px;
+        font-weight: 600;
+      }
+      .blur-note {
+        margin: 4px 0 16px;
+        color: var(--lr-text-secondary);
+        font-size: 14px;
+        line-height: 20px;
+        max-width: 320px;
       }
       .reveal-btn {
         all: initial;
-        display: inline-block;
-        padding: 10px 24px;
+        display: inline-flex;
+        align-items: center;
+        height: 36px;
+        padding: 0 14px;
         border-radius: var(--lr-radius-btn);
-        background: var(--lr-accent);
-        color: #0f0f13;
+        border: 1px solid var(--lr-border-focus);
+        background: var(--lr-bg-surface);
+        color: var(--lr-text-primary);
         font-family: var(--lr-font);
         font-size: 14px;
-        font-weight: 700;
+        font-weight: 500;
         cursor: pointer;
-        transition: opacity 0.15s, transform 0.1s;
-        letter-spacing: 0.01em;
+        transition: border-color 0.15s, transform 0.1s;
       }
-      .reveal-btn:hover { opacity: 0.88; transform: translateY(-1px); }
-      .reveal-btn:active { transform: translateY(0); }
+      .reveal-btn:hover { border-color: var(--lr-text-primary); }
+      .reveal-btn:active { transform: translateY(1px); }
+      .reveal-btn:focus-visible { outline: 2px solid var(--lr-hue); outline-offset: 2px; }
     `;
 
     const overlay = document.createElement('div');
@@ -513,26 +532,26 @@ function maybeBlurEditor() {
 
     const msg = document.createElement('div');
     msg.className = 'blur-message';
-    msg.textContent = 'Reset your code before revealing';
+    msg.textContent = 'Your last solution is hidden';
+
+    const note = document.createElement('div');
+    note.className = 'blur-note';
+    note.textContent = 'Reset the editor and solve it from scratch. Reveal it only if you get stuck.';
 
     const btn = document.createElement('button');
     btn.className = 'reveal-btn';
-    btn.textContent = 'Reveal Code';
+    btn.textContent = 'Show my code';
     btn.addEventListener('click', function () {
       host.remove();
     });
 
     overlay.appendChild(msg);
+    overlay.appendChild(note);
     overlay.appendChild(btn);
-    shadow.appendChild(createFontLink());
     shadow.appendChild(style);
     shadow.appendChild(overlay);
 
-    // Position the overlay on top of the editor container
-    const rect = editorEl.getBoundingClientRect();
-    editorEl.style.position = editorEl.style.position || 'relative';
-
-    // Insert overlay as a sibling positioned over the editor
+    // Insert overlay as a child positioned over the editor
     editorEl.style.position = 'relative';
     editorEl.appendChild(host);
     host.style.position = 'absolute';
@@ -644,6 +663,7 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
 
   const host = document.createElement('div');
   host.id = 'ankleet-toast-host';
+  lrPrepareHost(host);
   document.body.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -657,41 +677,51 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
       position: fixed;
       bottom: 24px;
       right: 24px;
-      width: 360px;
-      max-height: 500px;
+      width: min(380px, calc(100vw - 48px));
+      max-height: min(520px, calc(100vh - 48px));
       background: var(--lr-bg-surface);
       color: var(--lr-text-primary);
+      border: 1px solid var(--lr-border);
       border-radius: var(--lr-radius-panel);
-      box-shadow:
-        0 12px 48px rgba(0,0,0,0.5),
-        0 0 0 1px var(--lr-border);
+      box-shadow: var(--lr-shadow);
       z-index: 2147483647;
       font-family: var(--lr-font);
       overflow: hidden;
-      animation: panel-in 0.25s cubic-bezier(0.34, 1.3, 0.64, 1);
+      animation: panel-in 0.2s ease-out;
     }
     @keyframes panel-in {
-      from { opacity: 0; transform: translateY(10px) scale(0.97); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     .panel-header {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--lr-border);
-      background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%);
+      gap: 12px;
+      padding: 14px 16px 0;
     }
+    .panel-head-text { min-width: 0; }
     .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       font-size: 13px;
-      font-weight: 700;
+      line-height: 18px;
+      font-weight: 500;
       color: var(--lr-error);
-      letter-spacing: -0.01em;
+    }
+    .panel-title::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
     }
     .panel-problem {
-      font-size: 11px;
-      color: var(--lr-text-muted);
-      max-width: 200px;
+      margin-top: 2px;
+      font-size: 16px;
+      line-height: 22px;
+      font-weight: 600;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -703,10 +733,9 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
       justify-content: center;
       width: 24px;
       height: 24px;
+      margin: -2px -4px 0 0;
       border-radius: var(--lr-radius-sm);
-      font-family: var(--lr-font);
-      font-size: 16px;
-      color: var(--lr-text-muted);
+      color: var(--lr-text-secondary);
       cursor: pointer;
       flex-shrink: 0;
       transition: color 0.15s, background 0.15s;
@@ -715,18 +744,19 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
       color: var(--lr-text-primary);
       background: var(--lr-bg-elevated);
     }
+    .close-btn:focus-visible { outline: 2px solid var(--lr-hue); outline-offset: 2px; }
     .panel-body {
-      padding: 14px 16px;
+      padding: 12px 16px 16px;
       overflow-y: auto;
       flex: 1;
       scrollbar-width: thin;
       scrollbar-color: var(--lr-border) transparent;
     }
-    .panel-body::-webkit-scrollbar { width: 5px; }
-    .panel-body::-webkit-scrollbar-track { background: transparent; }
-    .panel-body::-webkit-scrollbar-thumb {
-      background: var(--lr-border);
-      border-radius: 3px;
+    .panel-lead {
+      font-size: 14px;
+      line-height: 20px;
+      color: var(--lr-text-secondary);
+      margin: 0 0 12px;
     }
     .ai-buttons {
       display: flex;
@@ -737,29 +767,36 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 9px 18px;
+      height: 36px;
+      padding: 0 14px;
       border-radius: var(--lr-radius-btn);
+      border: 1px solid var(--lr-border-focus);
+      background: var(--lr-bg-surface);
+      color: var(--lr-text-primary);
       font-family: var(--lr-font);
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 500;
       cursor: pointer;
-      transition: opacity 0.15s, transform 0.15s;
-      color: #fff;
-      letter-spacing: 0.01em;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
     }
-    .ai-btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
-    .ai-btn:active:not(:disabled) { transform: translateY(0); }
-    .ai-btn:disabled { opacity: 0.35; cursor: default; transform: none; }
-    .ai-btn.hint { background: var(--lr-hint); }
-    .ai-btn.full { background: var(--lr-success); }
+    .ai-btn:hover:not(:disabled) { border-color: var(--lr-text-primary); }
+    .ai-btn:active:not(:disabled) { transform: translateY(1px); }
+    .ai-btn:focus-visible { outline: 2px solid var(--lr-hue); outline-offset: 2px; }
+    .ai-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+    .ai-btn.hint {
+      background: var(--lr-primary);
+      border-color: var(--lr-primary);
+      color: var(--lr-on-primary);
+    }
+    .ai-btn.hint:hover:not(:disabled) { background: var(--lr-primary-hover); border-color: var(--lr-primary-hover); }
 
-    /* ── Loading: animated dots (matches chat panel) ── */
+    /* ── Loading (matches chat panel) ── */
     .loading {
       display: none;
       align-items: center;
-      gap: 6px;
-      margin-top: 12px;
-      font-size: 12px;
+      gap: 8px;
+      margin-top: 14px;
+      font-size: 13px;
       color: var(--lr-text-secondary);
       font-family: var(--lr-font);
     }
@@ -768,28 +805,29 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
       gap: 3px;
     }
     .loading-dots span {
-      width: 5px;
-      height: 5px;
+      width: 4px;
+      height: 4px;
       border-radius: 50%;
-      background: var(--lr-accent);
-      animation: dot-bounce 1.2s ease-in-out infinite;
+      background: currentColor;
+      animation: dot-pulse 1.2s ease-in-out infinite;
     }
     .loading-dots span:nth-child(2) { animation-delay: 0.15s; }
     .loading-dots span:nth-child(3) { animation-delay: 0.3s; }
-    @keyframes dot-bounce {
-      0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
-      30% { opacity: 1; transform: translateY(-3px); }
+    @keyframes dot-pulse {
+      0%, 60%, 100% { opacity: 0.25; }
+      30% { opacity: 1; }
     }
 
     .feedback-area {
       text-align: left;
-      margin-top: 12px;
+      margin-top: 14px;
     }
+    .feedback-area:empty { display: none; }
     .feedback-area p {
       white-space: pre-wrap;
-      line-height: 1.55;
-      margin: 0 0 8px 0;
-      font-size: 13px;
+      line-height: 21px;
+      margin: 0 0 10px 0;
+      font-size: 14px;
       color: var(--lr-text-primary);
     }
     .feedback-area pre {
@@ -797,42 +835,51 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
       overflow-x: auto;
       font-family: var(--lr-font-mono);
       font-size: 12.5px;
-      color: #cdd6f4;
+      line-height: 19px;
+      color: var(--lr-text-primary);
       padding: 12px 14px;
       border-radius: var(--lr-radius-btn);
-      margin: 0 0 8px 0;
+      margin: 0 0 10px 0;
       white-space: pre;
       border: 1px solid var(--lr-border);
     }
     .error-msg {
       color: var(--lr-error);
-      font-size: 12px;
+      font-size: 13px;
+      line-height: 18px;
       text-align: left;
-      margin-top: 12px;
       font-family: var(--lr-font);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .panel, .loading-dots span { animation: none; }
     }
   `;
 
   const panel = document.createElement('div');
   panel.className = 'panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-labelledby', 'lr-panel-problem');
 
   // Header
   const header = document.createElement('div');
   header.className = 'panel-header';
 
   const headerLeft = document.createElement('div');
+  headerLeft.className = 'panel-head-text';
   const titleEl = document.createElement('div');
   titleEl.className = 'panel-title';
-  titleEl.textContent = 'Wrong Submission';
+  titleEl.textContent = 'Not accepted';
   const problemEl = document.createElement('div');
   problemEl.className = 'panel-problem';
+  problemEl.id = 'lr-panel-problem';
   problemEl.textContent = title || titleSlug.replace(/-/g, ' ');
   headerLeft.appendChild(titleEl);
   headerLeft.appendChild(problemEl);
 
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close-btn';
-  closeBtn.textContent = '\u00d7';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.innerHTML = LR_SVG_CLOSE;
   closeBtn.addEventListener('click', function () { host.remove(); });
 
   header.appendChild(headerLeft);
@@ -842,22 +889,27 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
   const body = document.createElement('div');
   body.className = 'panel-body';
 
+  const leadEl = document.createElement('p');
+  leadEl.className = 'panel-lead';
+  leadEl.textContent = 'A hint asks a question about your code; the solution explains the whole approach.';
+
   const buttonsEl = document.createElement('div');
   buttonsEl.className = 'ai-buttons';
 
   const hintBtn = document.createElement('button');
   hintBtn.className = 'ai-btn hint';
-  hintBtn.textContent = 'Hint';
+  hintBtn.textContent = 'Get a hint';
 
   const fullBtn = document.createElement('button');
   fullBtn.className = 'ai-btn full';
-  fullBtn.textContent = 'Full Solution';
+  fullBtn.textContent = 'Show the solution';
 
   buttonsEl.appendChild(hintBtn);
   buttonsEl.appendChild(fullBtn);
 
   const loadingEl = document.createElement('div');
   loadingEl.className = 'loading';
+  loadingEl.setAttribute('role', 'status');
   const dotsContainer = document.createElement('div');
   dotsContainer.className = 'loading-dots';
   for (let i = 0; i < 3; i++) dotsContainer.appendChild(document.createElement('span'));
@@ -868,6 +920,7 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
   const feedbackArea = document.createElement('div');
   feedbackArea.className = 'feedback-area';
 
+  body.appendChild(leadEl);
   body.appendChild(buttonsEl);
   body.appendChild(loadingEl);
   body.appendChild(feedbackArea);
@@ -875,7 +928,6 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
   panel.appendChild(header);
   panel.appendChild(body);
 
-  shadow.appendChild(createFontLink());
   shadow.appendChild(style);
   shadow.appendChild(panel);
 
@@ -883,7 +935,7 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
     hintBtn.disabled = true;
     fullBtn.disabled = true;
     loadingEl.style.display = 'flex';
-    loadingText.textContent = mode === 'hint' ? 'Getting hint' : 'Getting solution';
+    loadingText.textContent = mode === 'hint' ? 'Writing a hint' : 'Writing the solution';
     feedbackArea.innerHTML = '';
 
     // Extract current editor code via content-main.js (MAIN world), then send feedback request
@@ -895,13 +947,13 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
           if (chrome.runtime.lastError) {
             hintBtn.disabled = false;
             fullBtn.disabled = false;
-            renderError(feedbackArea, 'Connection lost');
+            renderError(feedbackArea, 'Lost the connection to AnkLeet. Reload the page and try again.');
             return;
           }
           if (!response) {
             hintBtn.disabled = false;
             fullBtn.disabled = false;
-            renderError(feedbackArea, 'No response received');
+            renderError(feedbackArea, 'No response received. Try again.');
             return;
           }
           if (response.error) {
@@ -910,6 +962,7 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
             renderError(feedbackArea, response.error);
             return;
           }
+          leadEl.remove();
           renderFeedback(feedbackArea, response.feedback);
         }
       );
@@ -923,9 +976,9 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
 // Listen for messages from the service worker.
 chrome.runtime.onMessage.addListener(function (msg) {
   if (msg.type === 'SHOW_TOAST') {
-    showToast('\u2713 Submission captured');
+    showToast('Submission captured');
   } else if (msg.type === 'SHOW_RATING') {
-    showRatingDialog(msg.titleSlug, msg.title);
+    showRatingDialog(msg.titleSlug, msg.title, msg.nextIntervals);
   } else if (msg.type === 'SHOW_WRONG_SUBMISSION') {
     showWrongSubmissionDialog(msg.submissionId, msg.titleSlug, msg.title);
   }

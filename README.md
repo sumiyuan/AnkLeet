@@ -34,7 +34,7 @@ An AI chat panel (powered by [OpenRouter](https://openrouter.ai)) lives on every
 - Request full solutions with explanations
 - Have multi-turn conversations about approach, complexity, or edge cases
 
-Supports Claude, GPT-4o, and Gemini models — configurable in settings.
+Supports Claude, GPT, Gemini and DeepSeek models — configurable in Settings.
 
 ### Dashboard
 The popup shows:
@@ -87,10 +87,11 @@ ankleet/
 ├── background.js            # Service worker — data layer, SRS scheduler, OpenRouter API
 ├── content-main.js          # MAIN world — intercepts XHR/fetch on LeetCode pages
 ├── content-isolated.js      # ISOLATED world — relays messages from page to service worker
+├── content-theme.js         # ISOLATED world — shared tokens, light/dark and fonts for injected UI
 ├── content-toast.js         # ISOLATED world — rating dialogs, wrong submission panel, toasts
 ├── content-chat.js          # ISOLATED world — floating AI chat panel (Shadow DOM)
 ├── popup.html / .js / .css  # Extension popup — dashboard, reviews, settings
-├── fonts/                   # Bundled DM Sans and JetBrains Mono fonts
+├── fonts/                   # Bundled Geist (UI) and JetBrains Mono (code) fonts
 └── icons/                   # Extension icons (16, 48, 128px)
 ```
 
@@ -121,14 +122,13 @@ Service Worker (background.js)
   │    conversations — per-problem AI chat history
   │
   ├─ chrome.storage.local
-  │    settings — API key, model, notifications config
+  │    settings — API key, model
   │
   ├─ OpenRouter API
   │    AI hints, solutions, and multi-turn chat
   │
   └─ Chrome APIs
-       alarms (review check every minute)
-       notifications (daily review reminder)
+       alarms (badge refresh every minute)
        action badge (due count)
 ```
 
@@ -152,9 +152,8 @@ Service Worker (background.js)
 
 | Permission | Why |
 |---|---|
-| `storage` | Persist settings and notification state |
-| `alarms` | Check for due reviews every minute, trigger daily reminders |
-| `notifications` | Daily review reminder at your configured time |
+| `storage` | Persist settings |
+| `alarms` | Refresh the due-review badge every minute |
 | `https://leetcode.com/*` | Intercept submissions, inject UI on problem pages |
 | `https://neetcode.io/*` | Future support for neetcode problem pages |
 | `https://openrouter.ai/*` | AI chat and hint API calls |

@@ -141,6 +141,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const cards = await getDueToday(db);
         const enriched = await enrichCardsWithSubmissionData(db, cards);
+        // The interval each rating would schedule, shown on the rating buttons
+        for (const card of enriched) {
+          card.nextIntervals = {};
+          for (const r of ['Again', 'Hard', 'Good', 'Easy']) card.nextIntervals[r] = srsSchedule(card, r).interval;
+        }
         sendResponse({ cards: enriched });
       } catch (err) {
         sendResponse({ error: err.message });
@@ -505,7 +510,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 // Alarm listener — MUST be registered at top level (module scope).
-// Fires every minute for the 'checkDueReviews' alarm.
+// Fires every minute for the 'checkDueReviews' alarm to keep the badge current.
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== 'checkDueReviews') return;
 
@@ -516,34 +521,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
     const cards = await getDueToday(db);
     updateBadge(cards.length);
-
-    // Check notification conditions
-    const { settings, lastNotifiedDate } = await chrome.storage.local.get(['settings', 'lastNotifiedDate']);
-
-    if (settings?.notificationsEnabled !== true) return;
-    if (cards.length === 0) return;
-
-    // Parse notificationTime (default '09:00') and compare with current time
-    const timeStr = settings.notificationTime || '09:00';
-    const [notifHour, notifMin] = timeStr.split(':').map(Number);
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const notifMinutes = notifHour * 60 + notifMin;
-    if (nowMinutes < notifMinutes) return;
-
-    // Dedup: only fire once per calendar day
-    const todayStr = now.toISOString().slice(0, 10);
-    if (lastNotifiedDate === todayStr) return;
-
-    // All conditions met — fire notification
-    const count = cards.length;
-    chrome.notifications.create('dueReviews', {
-      type: 'basic',
-      iconUrl: 'icons/icon128.png',
-      title: 'AnkLeet',
-      message: `You have ${count} review${count === 1 ? '' : 's'} due today.`
-    });
-    await chrome.storage.local.set({ lastNotifiedDate: todayStr });
   })();
 });
 
@@ -906,12 +883,17 @@ async function saveSubmission(data, tabId) {
       } catch (err) {
         console.warn('[AnkLeet] maybeCreateCard failed', err);
       }
-      // Show rating dialog on the LeetCode page for accepted submissions
+      // Show rating dialog on the LeetCode page for accepted submissions,
+      // with the interval each rating would schedule for the card
       if (tabId !== null) {
+        const card = await getCard(db, record.titleSlug).catch(() => null);
+        const nextIntervals = {};
+        if (card) for (const r of ['Again', 'Hard', 'Good', 'Easy']) nextIntervals[r] = srsSchedule(card, r).interval;
         await notifyTab(tabId, {
           type: 'SHOW_RATING',
           titleSlug: record.titleSlug,
-          title: record.title
+          title: record.title,
+          nextIntervals
         });
       }
     } else if (tabId !== null) {
@@ -1263,12 +1245,18 @@ function getTodaySubmissions(database) {
 
 /**
  * Returns aggregate statistics computed from all review log entries.
- * { totalReviews, retentionRate, streak }
+ * { totalReviews, retentionRate, streak, nextDue }
  * retentionRate: percentage of Good (3) or Easy (4) ratings, rounded to integer.
  * streak: consecutive calendar days with at least one review, counting backward from today.
+ * nextDue: ISO due date of the earliest card due after today, or null.
  */
 async function getStats(database) {
   const logs = await getAllReviewLogs(database);
+  const cards = await getAllFromStore(database, 'cards');
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  const upcoming = cards.map(c => c.due).filter(d => d && d > endOfToday.toISOString()).sort();
+  const nextDue = upcoming[0] || null;
   const totalReviews = logs.length;
 
   let retentionRate = 0;
@@ -1280,5 +1268,5 @@ async function getStats(database) {
   const reviewDays = new Set(logs.map(log => toLocalDateStr(new Date(log.reviewedAt))));
   const streak = computeStreak(reviewDays);
 
-  return { totalReviews, retentionRate, streak };
+  return { totalReviews, retentionRate, streak, nextDue };
 }

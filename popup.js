@@ -1,54 +1,148 @@
 // AnkLeet — Popup Script
 // No inline scripts — all event listeners via addEventListener (MV3 CSP compliant)
 
+const DAY_MS = 86400000;
+
 // ── Tab Switching ──
 
-function initTabs() {
-  const tabBtns = document.querySelectorAll('.tab-btn');
-  const tabPanels = document.querySelectorAll('.tab-panel');
-
-  tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetTab = btn.dataset.tab;
-
-      // Deactivate all tabs and panels
-      tabBtns.forEach(b => b.classList.remove('active'));
-      tabPanels.forEach(p => p.classList.remove('active'));
-
-      // Activate selected tab and panel
-      btn.classList.add('active');
-      const panel = document.getElementById('tab-' + targetTab);
-      if (panel) panel.classList.add('active');
-
-      // Refresh data on tab switch
-      if (targetTab === 'dashboard') {
-        loadDashboard();
-      } else if (targetTab === 'reviews') {
-        loadReviews();
-      } else if (targetTab === 'settings') {
-        loadSettings();
-      }
-    });
+function showTab(targetTab) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const isActive = b.dataset.tab === targetTab;
+    b.classList.toggle('active', isActive);
+    if (isActive) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.toggle('active', p.id === 'tab-' + targetTab);
+  });
+
+  // Refresh data on tab switch
+  if (targetTab === 'dashboard') {
+    loadDashboard();
+  } else if (targetTab === 'reviews') {
+    loadReviews();
+  } else if (targetTab === 'settings') {
+    loadSettings();
+  }
+}
+
+function initTabs() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => showTab(btn.dataset.tab));
+  });
+}
+
+// ── Formatting ──
+
+function toLocalDateStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function startOfDay(d) {
+  const s = new Date(d);
+  s.setHours(0, 0, 0, 0);
+  return s;
+}
+
+function plural(n, word) {
+  return n + ' ' + word + (n === 1 ? '' : 's');
+}
+
+function formatDayLabel(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+/**
+ * Describes a future date relative to today: "tomorrow", "Thu, Oct 31".
+ */
+function formatUpcoming(iso) {
+  const days = Math.round((startOfDay(new Date(iso)) - startOfDay(new Date())) / DAY_MS);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  return new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+/**
+ * Whole days a card is past its due date (0 when due today).
+ */
+function daysOverdue(card) {
+  return Math.max(0, Math.round((startOfDay(new Date()) - startOfDay(new Date(card.due))) / DAY_MS));
+}
+
+function displayTitle(item) {
+  const t = item.title || item.titleSlug.replace(/-/g, ' ');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function problemUrl(titleSlug, review) {
+  return 'https://leetcode.com/problems/' + titleSlug + '/' + (review ? '?ankleet=review' : '');
+}
+
+// ── Due Summary ──
+// One request feeds the Today figure, the Reviews tab count and the queue,
+// so the three can never disagree.
+
+let lastStats = {};
+
+function renderDueSummary(cards) {
+  const countEl = document.getElementById('due-count');
+  const labelEl = document.getElementById('due-label');
+  const noteEl = document.getElementById('due-note');
+  const startBtn = document.getElementById('start-reviews');
+  const tabCount = document.getElementById('tab-due-count');
+
+  const n = cards.length;
+  countEl.textContent = String(n);
+  countEl.classList.toggle('is-zero', n === 0);
+  labelEl.textContent = (n === 1 ? 'review' : 'reviews') + ' due today';
+  startBtn.hidden = n === 0;
+  tabCount.hidden = n === 0;
+  tabCount.textContent = String(n);
+
+  if (n > 0) {
+    const oldest = cards.reduce((a, b) => (daysOverdue(b) > daysOverdue(a) ? b : a), cards[0]);
+    const late = daysOverdue(oldest);
+    if (late > 0) {
+      noteEl.textContent = displayTitle(oldest) + ' is ' + plural(late, 'day') + ' overdue.';
+    } else {
+      noteEl.textContent = displayTitle(cards[0]) + (n > 1 ? ' and ' + (n - 1) + ' more.' : '.');
+    }
+  } else {
+    noteEl.textContent = nextReviewSentence();
+  }
+}
+
+function nextReviewSentence() {
+  if (lastStats.nextDue) return 'Next review ' + formatUpcoming(lastStats.nextDue) + '.';
+  return 'Get a problem accepted on LeetCode and it joins your schedule.';
 }
 
 // ── Stats Rendering ──
 
-function renderStats(stats) {
-  const retentionEl = document.getElementById('stat-retention');
-  const reviewsEl = document.getElementById('stat-reviews');
-  const streakEl = document.getElementById('stat-streak');
-
-  if (retentionEl) retentionEl.textContent = (stats.retentionRate != null) ? stats.retentionRate + '%' : '—';
-  if (reviewsEl) reviewsEl.textContent = (stats.totalReviews != null) ? String(stats.totalReviews) : '—';
-  if (streakEl) streakEl.textContent = (stats.streak != null) ? stats.streak + 'd' : '—';
+function setFigure(id, value, unit) {
+  const valueEl = document.getElementById(id);
+  const unitEl = document.getElementById(id + '-unit');
+  if (!valueEl) return;
+  valueEl.textContent = value;
+  valueEl.classList.toggle('is-empty', value === '—');
+  if (unitEl) unitEl.textContent = unit || '';
 }
 
-// ── Today Activity Aggregation ──
+function renderStats(stats) {
+  lastStats = stats || {};
+  const total = stats.totalReviews;
+  setFigure('stat-reviews', total != null ? String(total) : '—');
+  // Retention is undefined until something has been reviewed — a dash, not 0%
+  setFigure('stat-retention', total > 0 ? String(stats.retentionRate) : '—', total > 0 ? '%' : '');
+  setFigure('stat-streak', stats.streak != null ? String(stats.streak) : '—', stats.streak != null ? (stats.streak === 1 ? 'day' : 'days') : '');
+}
+
+// ── Day Activity ──
 
 /**
  * Groups submissions by titleSlug, summing attempt counts.
- * Returns array of { titleSlug, title, difficulty, attempts } sorted by most attempts first.
+ * Returns array of { titleSlug, title, accepted, attempts } sorted by most attempts first.
  */
 function aggregateTodayActivity(submissions) {
   const bySlug = new Map();
@@ -71,111 +165,110 @@ function aggregateTodayActivity(submissions) {
   return Array.from(bySlug.values()).sort((a, b) => b.attempts - a.attempts);
 }
 
-// ── Activity Rendering ──
-
 function renderTodayActivity(submissions, emptyMessage) {
   const listEl = document.getElementById('activity-list');
   if (!listEl) return;
 
   const activities = aggregateTodayActivity(submissions);
+  listEl.innerHTML = '';
 
   if (activities.length === 0) {
-    listEl.innerHTML = '<div class="empty-state">' + (emptyMessage || 'No activity today') + '</div>';
+    const li = document.createElement('li');
+    li.className = 'rows-empty';
+    li.textContent = emptyMessage || 'Nothing submitted today.';
+    listEl.appendChild(li);
     return;
   }
 
-  listEl.innerHTML = '';
-
   for (const item of activities) {
-    const div = document.createElement('div');
-    div.className = 'activity-item';
+    const li = document.createElement('li');
+    li.className = 'row';
 
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'activity-title';
-    // Capitalize first letter of each word for display
-    const displayTitle = item.title
-      ? item.title.charAt(0).toUpperCase() + item.title.slice(1)
-      : item.titleSlug.replace(/-/g, ' ');
-    titleSpan.textContent = displayTitle;
-    titleSpan.title = displayTitle; // tooltip for truncated text
+    const title = displayTitle(item);
+    const link = document.createElement('a');
+    link.className = 'row-title';
+    link.href = problemUrl(item.titleSlug, false);
+    link.textContent = title;
+    link.title = title;
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: problemUrl(item.titleSlug, false) });
+    });
 
-    const badgeSpan = document.createElement('span');
-    badgeSpan.className = 'status-dot ' + (item.accepted ? 'accepted' : 'in-progress');
-    badgeSpan.title = item.accepted ? 'Accepted' : 'In Progress';
+    const attempts = document.createElement('span');
+    attempts.className = 'row-meta num';
+    attempts.textContent = plural(item.attempts, 'attempt');
 
-    const attemptsSpan = document.createElement('span');
-    attemptsSpan.className = 'attempt-count';
-    attemptsSpan.textContent = item.attempts === 1 ? '1 attempt' : item.attempts + ' attempts';
+    const status = document.createElement('span');
+    status.className = 'pill' + (item.accepted ? ' pill-positive' : '');
+    status.textContent = item.accepted ? 'Accepted' : 'Not yet';
 
-    div.appendChild(titleSpan);
-    div.appendChild(badgeSpan);
-    div.appendChild(attemptsSpan);
-    listEl.appendChild(div);
+    li.append(link, attempts, status);
+    listEl.appendChild(li);
   }
 }
 
-// ── Activity Grid ──
+// ── Activity Chart ──
 
 let selectedActivityDay = null; // YYYY-MM-DD or null for today
 
-function toLocalDateStr(d) {
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
-function formatDayLabel(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
-function updateGridSelection() {
-  const cells = document.querySelectorAll('#activity-grid .grid-cell');
-  cells.forEach(c => {
-    if (c.dataset.date === selectedActivityDay) c.classList.add('selected');
-    else c.classList.remove('selected');
-  });
-}
-
 function selectActivityDay(dateStr, isToday) {
   selectedActivityDay = isToday ? null : dateStr;
-  updateGridSelection();
+  updateChartSelection();
 
   const titleEl = document.getElementById('activity-list-title');
   const backBtn = document.getElementById('activity-back-today');
   const listEl = document.getElementById('activity-list');
 
-  if (isToday) {
-    if (titleEl) titleEl.textContent = "Today's Activity";
-    if (backBtn) backBtn.style.display = 'none';
-  } else {
-    if (titleEl) titleEl.textContent = 'Activity — ' + formatDayLabel(dateStr);
-    if (backBtn) backBtn.style.display = 'inline-flex';
-  }
-
-  if (listEl) listEl.innerHTML = '<div class="empty-state">Loading...</div>';
+  if (titleEl) titleEl.textContent = isToday ? 'Problems today' : 'Problems on ' + formatDayLabel(dateStr);
+  if (backBtn) backBtn.hidden = isToday;
+  if (listEl) listEl.innerHTML = '<li class="rows-empty">Loading…</li>';
 
   const msgType = isToday ? 'GET_TODAY_SUBMISSIONS' : 'GET_DAY_SUBMISSIONS';
   const payload = isToday ? undefined : { date: dateStr };
   chrome.runtime.sendMessage({ type: msgType, payload }, response => {
     const submissions = (response && response.submissions) ? response.submissions : [];
-    const emptyMsg = isToday ? 'No activity today' : 'No activity on ' + formatDayLabel(dateStr);
+    const emptyMsg = isToday ? 'Nothing submitted today.' : 'Nothing submitted on ' + formatDayLabel(dateStr) + '.';
     renderTodayActivity(submissions, emptyMsg);
   });
 }
 
+function updateChartSelection() {
+  const shown = selectedActivityDay || toLocalDateStr(new Date());
+  document.querySelectorAll('#activity-grid .chart-col').forEach(c => {
+    const on = c.dataset.date === shown;
+    c.classList.toggle('selected', on);
+    c.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('#grid-labels span').forEach(s => {
+    s.classList.toggle('is-selected', s.dataset.date === shown);
+  });
+}
+
+/**
+ * Picks the y-axis top: the smallest even round number above the busiest day,
+ * so the scale reads 0 / half / top and no bar touches the frame.
+ */
+function chartTop(max) {
+  const steps = [2, 4, 6, 8, 10, 12, 16, 20, 30, 40, 50, 60, 80, 100];
+  for (const s of steps) if (s > max) return s;
+  return Math.ceil((max + 1) / 20) * 20;
+}
+
 function renderActivityGrid(counts) {
-  const gridEl = document.getElementById('activity-grid');
+  const barsEl = document.getElementById('activity-grid');
+  const gridEl = document.getElementById('chart-grid');
   const labelsEl = document.getElementById('grid-labels');
   const totalEl = document.getElementById('grid-total');
-  if (!gridEl || !labelsEl) return;
+  if (!barsEl || !gridEl || !labelsEl) return;
 
+  barsEl.innerHTML = '';
   gridEl.innerHTML = '';
   labelsEl.innerHTML = '';
 
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = startOfDay(new Date());
 
-  // Build array of last 14 days using local dates (not UTC)
+  // Last 14 days using local dates (not UTC)
   const days = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today);
@@ -183,48 +276,61 @@ function renderActivityGrid(counts) {
     days.push(toLocalDateStr(d));
   }
 
-  // Find max for level scaling
   const values = days.map(d => counts[d] || 0);
   const total = values.reduce((a, b) => a + b, 0);
-  const max = Math.max(...values, 1);
+  const top = chartTop(Math.max(...values));
 
-  if (totalEl) {
-    totalEl.textContent = total + ' submission' + (total === 1 ? '' : 's');
+  if (totalEl) totalEl.textContent = total + ' total';
+
+  // Gridlines at 0, half and top, ticks in the right-hand lane
+  for (const v of [0, top / 2, top]) {
+    const line = document.createElement('div');
+    line.className = 'chart-gridline' + (v === 0 ? ' is-base' : '');
+    line.style.top = (100 - (v / top) * 100) + '%';
+    const tick = document.createElement('span');
+    tick.className = 'chart-tick';
+    tick.textContent = String(v);
+    line.appendChild(tick);
+    gridEl.appendChild(line);
   }
 
   days.forEach((dateStr, idx) => {
     const count = values[idx];
-    let level = 0;
-    if (count > 0) {
-      const ratio = count / max;
-      if (ratio <= 0.25) level = 1;
-      else if (ratio <= 0.5) level = 2;
-      else if (ratio <= 0.75) level = 3;
-      else level = 4;
-    }
-
-    const cell = document.createElement('div');
-    cell.className = 'grid-cell';
-    cell.dataset.level = level;
-    cell.dataset.date = dateStr;
-    const d = new Date(dateStr + 'T00:00:00');
-    const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    cell.dataset.tooltip = label + ': ' + count + ' submission' + (count === 1 ? '' : 's');
     const isToday = idx === 13;
-    cell.addEventListener('click', () => selectActivityDay(dateStr, isToday));
-    if (selectedActivityDay === dateStr) cell.classList.add('selected');
-    gridEl.appendChild(cell);
+    const label = isToday ? 'Today' : new Date(dateStr + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-    const labelEl = document.createElement('div');
-    labelEl.className = 'grid-label';
-    if (isToday) {
-      labelEl.classList.add('today');
-      labelEl.textContent = 'Today';
-    } else {
-      labelEl.textContent = dayNames[d.getDay()];
+    const col = document.createElement('button');
+    col.type = 'button';
+    col.className = 'chart-col';
+    col.dataset.date = dateStr;
+    col.title = label + ': ' + plural(count, 'submission');
+    col.setAttribute('aria-label', label + ', ' + plural(count, 'submission'));
+    col.addEventListener('click', () => selectActivityDay(dateStr, isToday));
+
+    // A day with no submissions has no bar, only the baseline
+    if (count > 0) {
+      const bar = document.createElement('span');
+      bar.className = 'chart-bar';
+      bar.style.height = (count / top) * 100 + '%';
+      col.appendChild(bar);
     }
-    labelsEl.appendChild(labelEl);
+    barsEl.appendChild(col);
+
+    // Four labels on a four-day step that lands on today
+    if (idx % 4 === 1) {
+      const span = document.createElement('span');
+      span.dataset.date = dateStr;
+      span.textContent = label;
+      span.style.left = ((idx + 0.5) / 14) * 100 + '%';
+      if (isToday) {
+        span.className = 'is-last';
+        span.style.left = '100%';
+      }
+      labelsEl.appendChild(span);
+    }
   });
+
+  updateChartSelection();
 }
 
 function loadActivityGrid() {
@@ -244,6 +350,12 @@ function loadDashboard() {
     });
   });
 
+  const duePromise = new Promise(resolve => {
+    chrome.runtime.sendMessage({ type: 'GET_DUE_TODAY' }, response => {
+      resolve((response && response.cards) ? response.cards : []);
+    });
+  });
+
   const activeDay = selectedActivityDay;
   const submissionsPromise = new Promise(resolve => {
     const msg = activeDay
@@ -256,33 +368,36 @@ function loadDashboard() {
 
   loadActivityGrid();
 
-  Promise.all([statsPromise, submissionsPromise]).then(([stats, submissions]) => {
+  Promise.all([statsPromise, duePromise, submissionsPromise]).then(([stats, cards, submissions]) => {
     renderStats(stats);
+    renderDueSummary(cards);
     const emptyMsg = activeDay
-      ? 'No activity on ' + formatDayLabel(activeDay)
-      : 'No activity today';
+      ? 'Nothing submitted on ' + formatDayLabel(activeDay) + '.'
+      : 'Nothing submitted today.';
     renderTodayActivity(submissions, emptyMsg);
   }).catch(() => {
     const listEl = document.getElementById('activity-list');
-    if (listEl) listEl.innerHTML = '<div class="empty-state">Failed to load data</div>';
+    if (listEl) listEl.innerHTML = '<li class="rows-empty">Couldn’t load your activity. Reopen the popup to retry.</li>';
   });
 }
 
 // ── Reviews Tab ──
 
-/**
- * Updates the review count header text.
- */
 function updateReviewCountHeader(count) {
   const countEl = document.getElementById('review-count');
-  if (!countEl) return;
-  if (count === 0) {
-    countEl.textContent = 'No reviews due';
-  } else if (count === 1) {
-    countEl.textContent = '1 review due';
-  } else {
-    countEl.textContent = count + ' reviews due';
+  if (countEl) countEl.textContent = count === 0 ? '' : plural(count, 'problem');
+  const tabCount = document.getElementById('tab-due-count');
+  if (tabCount) {
+    tabCount.hidden = count === 0;
+    tabCount.textContent = String(count);
   }
+}
+
+function showReviewEmpty() {
+  const emptyEl = document.getElementById('review-empty');
+  const noteEl = document.getElementById('review-empty-note');
+  if (noteEl) noteEl.textContent = nextReviewSentence();
+  if (emptyEl) emptyEl.hidden = false;
 }
 
 /**
@@ -297,6 +412,30 @@ function removeCard(cardEl, onComplete) {
 }
 
 /**
+ * The grey line under a review title: difficulty, how late it is, and the last gap.
+ */
+function reviewSubline(card) {
+  const frag = document.createDocumentFragment();
+  if (card.difficulty) frag.append(card.difficulty + ' · ');
+  const late = daysOverdue(card);
+  if (late > 0) {
+    const span = document.createElement('span');
+    span.className = 'is-overdue';
+    span.textContent = plural(late, 'day') + ' overdue';
+    frag.append(span);
+  } else {
+    frag.append('Due today');
+  }
+  frag.append(' · ' + (card.reps > 0 && card.interval ? 'last gap ' + plural(card.interval, 'day') : 'first review'));
+  return frag;
+}
+
+function formatGap(days) {
+  if (days == null) return '';
+  return days === 1 ? '1 day' : days + ' days';
+}
+
+/**
  * Renders the review queue from an array of card objects.
  */
 function renderReviewQueue(cards) {
@@ -305,105 +444,101 @@ function renderReviewQueue(cards) {
   if (!listEl || !emptyEl) return;
 
   listEl.innerHTML = '';
+  emptyEl.hidden = true;
+  updateReviewCountHeader(cards.length);
 
   if (cards.length === 0) {
-    updateReviewCountHeader(0);
-    emptyEl.style.display = '';
+    showReviewEmpty();
     return;
   }
 
-  updateReviewCountHeader(cards.length);
-  emptyEl.style.display = 'none';
+  const afterRemoval = () => {
+    const remaining = listEl.querySelectorAll('.review-card').length;
+    updateReviewCountHeader(remaining);
+    if (remaining === 0) showReviewEmpty();
+  };
 
   for (const card of cards) {
-    const cardEl = document.createElement('div');
+    const cardEl = document.createElement('li');
     cardEl.className = 'review-card';
     cardEl.dataset.titleSlug = card.titleSlug;
+
+    const title = displayTitle(card);
 
     // Title row
     const titleRow = document.createElement('div');
     titleRow.className = 'review-card-title-row';
 
+    const heading = document.createElement('div');
+    heading.className = 'review-heading';
+
     const link = document.createElement('a');
-    link.href = '#';
-    const displayTitle = card.title || card.titleSlug.replace(/-/g, ' ');
-    link.textContent = displayTitle;
-    link.title = displayTitle;
+    link.className = 'review-title';
+    link.href = problemUrl(card.titleSlug, true);
+    link.textContent = title;
+    link.title = 'Open ' + title + ' with your old code hidden';
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      chrome.tabs.create({ url: 'https://leetcode.com/problems/' + card.titleSlug + '/?ankleet=review' });
+      chrome.tabs.create({ url: problemUrl(card.titleSlug, true) });
     });
 
-    titleRow.appendChild(link);
+    const sub = document.createElement('p');
+    sub.className = 'review-sub';
+    sub.appendChild(reviewSubline(card));
 
-    if (card.difficulty) {
-      const badge = document.createElement('span');
-      const diffLower = card.difficulty.toLowerCase();
-      let diffClass = 'unknown';
-      if (diffLower === 'easy') diffClass = 'easy';
-      else if (diffLower === 'medium') diffClass = 'medium';
-      else if (diffLower === 'hard') diffClass = 'hard';
-      badge.className = 'difficulty-badge ' + diffClass;
-      badge.textContent = card.difficulty;
-      titleRow.appendChild(badge);
-    }
+    heading.append(link, sub);
+
+    const ratingRow = document.createElement('div');
+    ratingRow.className = 'rating-buttons';
 
     const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
     removeBtn.className = 'card-remove-btn';
     removeBtn.title = 'Remove from review schedule';
-    removeBtn.setAttribute('aria-label', 'Remove from review schedule');
-    removeBtn.textContent = '×';
+    removeBtn.setAttribute('aria-label', 'Remove ' + title + ' from review schedule');
+    removeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
     removeBtn.addEventListener('click', () => {
-      if (!confirm('Remove "' + displayTitle + '" from your review schedule?')) return;
+      if (!confirm('Remove "' + title + '" from your review schedule?')) return;
       removeBtn.disabled = true;
       ratingRow.querySelectorAll('.rating-btn').forEach(b => { b.disabled = true; });
       chrome.runtime.sendMessage(
         { type: 'REMOVE_CARD', payload: { titleSlug: card.titleSlug } },
-        () => {
-          removeCard(cardEl, () => {
-            const remaining = listEl.querySelectorAll('.review-card').length;
-            updateReviewCountHeader(remaining);
-            if (remaining === 0) {
-              const emptyEl2 = document.getElementById('review-empty');
-              if (emptyEl2) emptyEl2.style.display = '';
-            }
-            loadDashboard();
-          });
-        }
+        () => removeCard(cardEl, () => { afterRemoval(); loadDashboard(); })
       );
     });
-    titleRow.appendChild(removeBtn);
 
+    titleRow.append(heading, removeBtn);
     cardEl.appendChild(titleRow);
 
-    // Rating buttons
-    const ratingRow = document.createElement('div');
-    ratingRow.className = 'rating-buttons';
-
+    // Rating buttons — each shows the gap the scheduler will set
+    const gaps = card.nextIntervals || {};
     for (const rating of ['Again', 'Hard', 'Good', 'Easy']) {
       const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'rating-btn';
       btn.dataset.rating = rating;
-      btn.textContent = rating;
+      const gap = formatGap(gaps[rating]);
+      btn.setAttribute('aria-label', rating + (gap ? ', next review in ' + gap : ''));
+
+      const name = document.createElement('span');
+      name.className = 'rating-name';
+      name.textContent = rating;
+      btn.appendChild(name);
+      if (gap) {
+        const gapEl = document.createElement('span');
+        gapEl.className = 'rating-gap';
+        gapEl.textContent = gap;
+        btn.appendChild(gapEl);
+      }
+
       btn.addEventListener('click', () => {
         // Disable buttons to prevent double-clicks
         ratingRow.querySelectorAll('.rating-btn').forEach(b => { b.disabled = true; });
 
         chrome.runtime.sendMessage(
           { type: 'RATE_REVIEW', payload: { titleSlug: card.titleSlug, rating } },
-          () => {
-            // Count remaining cards after this one is removed
-            removeCard(cardEl, () => {
-              const remaining = listEl.querySelectorAll('.review-card').length;
-              updateReviewCountHeader(remaining);
-              if (remaining === 0) {
-                const emptyEl2 = document.getElementById('review-empty');
-                if (emptyEl2) emptyEl2.style.display = '';
-              }
-              // Refresh dashboard stats since totalReviews changed
-              loadDashboard();
-            });
-          }
+          // Refresh dashboard stats since totalReviews changed
+          () => removeCard(cardEl, () => { afterRemoval(); loadDashboard(); })
         );
       });
       ratingRow.appendChild(btn);
@@ -419,7 +554,7 @@ function renderReviewQueue(cards) {
  */
 function loadReviews() {
   const countEl = document.getElementById('review-count');
-  if (countEl) countEl.textContent = 'Loading...';
+  if (countEl) countEl.textContent = 'Loading…';
 
   chrome.runtime.sendMessage({ type: 'GET_DUE_TODAY' }, response => {
     const cards = (response && response.cards) ? response.cards : [];
@@ -437,14 +572,20 @@ function loadSettings() {
     const s = result.settings || {};
     const apiKeyEl = document.getElementById('api-key');
     const aiModelEl = document.getElementById('ai-model');
-    const notifEnabledEl = document.getElementById('notif-enabled');
-    const notifTimeEl = document.getElementById('notif-time');
 
     if (apiKeyEl) apiKeyEl.value = s.openRouterApiKey || '';
     if (aiModelEl) aiModelEl.value = s.aiModel || 'anthropic/claude-haiku-4.5';
-    if (notifEnabledEl) notifEnabledEl.checked = (s.notificationsEnabled !== false); // default true
-    if (notifTimeEl) notifTimeEl.value = s.notificationTime || '09:00';
   });
+}
+
+function flashStatus(id, text, isError) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle('is-error', !!isError);
+  el.classList.add('visible');
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => el.classList.remove('visible'), isError ? 4000 : 2000);
 }
 
 /**
@@ -455,40 +596,21 @@ function saveSettings() {
     const existing = result.settings || {};
     const apiKeyEl = document.getElementById('api-key');
     const aiModelEl = document.getElementById('ai-model');
-    const notifEnabledEl = document.getElementById('notif-enabled');
-    const notifTimeEl = document.getElementById('notif-time');
 
     const merged = {
       ...existing,
       openRouterApiKey: (apiKeyEl ? apiKeyEl.value.trim() : (existing.openRouterApiKey || '')),
-      aiModel: (aiModelEl ? aiModelEl.value : (existing.aiModel || 'anthropic/claude-haiku-4.5')),
-      notificationsEnabled: notifEnabledEl ? notifEnabledEl.checked : (existing.notificationsEnabled !== false),
-      notificationTime: (notifTimeEl ? notifTimeEl.value : (existing.notificationTime || '09:00'))
+      aiModel: (aiModelEl ? aiModelEl.value : (existing.aiModel || 'anthropic/claude-haiku-4.5'))
     };
 
-    chrome.storage.local.set({ settings: merged }, () => {
-      // Show brief confirmation
-      const statusEl = document.getElementById('save-status');
-      if (statusEl) {
-        statusEl.textContent = 'Settings saved';
-        statusEl.classList.add('visible');
-        setTimeout(() => {
-          statusEl.classList.remove('visible');
-        }, 2000);
-      }
-    });
+    chrome.storage.local.set({ settings: merged }, () => flashStatus('save-status', 'Saved'));
   });
 }
 
 // ── Data Export/Import ──
 
 function showDataStatus(text, isError) {
-  const el = document.getElementById('data-status');
-  if (!el) return;
-  el.textContent = text;
-  el.style.color = isError ? '#E85D75' : '#3DBAA2';
-  el.classList.add('visible');
-  setTimeout(() => el.classList.remove('visible'), 3000);
+  flashStatus('data-status', text, isError);
 }
 
 function exportData() {
@@ -508,7 +630,7 @@ function exportData() {
     a.download = 'ankleet-export-' + new Date().toISOString().slice(0, 10) + '.json';
     a.click();
     URL.revokeObjectURL(url);
-    showDataStatus('Data exported');
+    showDataStatus('Exported');
   });
 }
 
@@ -519,11 +641,11 @@ function importData(file) {
     try {
       parsed = JSON.parse(reader.result);
     } catch {
-      showDataStatus('Invalid JSON file', true);
+      showDataStatus('That file isn’t valid JSON', true);
       return;
     }
     if (!parsed.version) {
-      showDataStatus('Not a valid AnkLeet export', true);
+      showDataStatus('Not an AnkLeet export', true);
       return;
     }
 
@@ -532,13 +654,13 @@ function importData(file) {
         showDataStatus(response?.error || 'Import failed', true);
         return;
       }
-      showDataStatus('Data imported successfully');
+      showDataStatus('Imported');
       // Refresh current view
       loadDashboard();
       loadSettings();
     });
   };
-  reader.onerror = () => showDataStatus('Failed to read file', true);
+  reader.onerror = () => showDataStatus('Couldn’t read that file', true);
   reader.readAsText(file);
 }
 
@@ -548,12 +670,24 @@ document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   loadDashboard();
 
+  const startBtn = document.getElementById('start-reviews');
+  if (startBtn) startBtn.addEventListener('click', () => showTab('reviews'));
+
   // Wire "Back to today" button in the activity section
   const backBtn = document.getElementById('activity-back-today');
   if (backBtn) {
     backBtn.addEventListener('click', () => {
       const today = toLocalDateStr(new Date());
       selectActivityDay(today, true);
+    });
+  }
+
+  // Links in a popup must open a tab explicitly
+  const keyLink = document.getElementById('openrouter-link');
+  if (keyLink) {
+    keyLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: keyLink.href });
     });
   }
 

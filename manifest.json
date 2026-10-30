@@ -3,7 +3,7 @@
   "name": "AnkLeet",
   "version": "1.1.0",
   "description": "Automatically track every LeetCode submission",
-  "permissions": ["storage", "alarms", "notifications"],
+  "permissions": ["storage", "alarms"],
   "host_permissions": ["https://leetcode.com/*", "https://neetcode.io/*", "https://openrouter.ai/*"],
   "background": {
     "service_worker": "background.js"
@@ -30,13 +30,19 @@
     },
     {
       "matches": ["https://leetcode.com/problems/*"],
-      "js": ["content-toast.js"],
+      "js": ["content-theme.js", "content-toast.js"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://leetcode.com/problems/*"],
       "js": ["content-chat.js"],
       "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["fonts/*.woff2"],
+      "matches": ["https://leetcode.com/*"]
     }
   ],
   "icons": {
