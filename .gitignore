@@ -1,1 +1,6 @@
 .planning/
+.taste-skill/
+.agents/
+.claude/
+.matilda/
+skills-lock.json
