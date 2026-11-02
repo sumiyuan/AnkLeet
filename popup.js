@@ -4,18 +4,50 @@
 const DAY_MS = 86400000;
 
 // Close the popup when it loses focus (a click outside it). Chrome normally
-// does this itself; this covers the cases where it does not. Native dialogs
-// opened from the popup (confirm, file picker, download) also blur it, so
-// holdOpen() suspends this until focus returns.
+// does this itself; this covers the cases where it does not.
+//
+// A blur is not proof the user left: when the popup opens, or when a click
+// inside activates its window, macOS can blur and refocus the page within a
+// few milliseconds. So a blur only closes the popup if, after a short wait,
+// the page still has no focus and the user has not just pressed inside it.
+// Native dialogs opened from the popup (confirm, file picker, download) also
+// blur it, so holdOpen() suspends this until focus returns.
+const BLUR_SETTLE_MS = 200;
+const RECENT_PRESS_MS = 600;
 let popupHeldOpen = false;
+let lastInsidePress = 0;
+let blurTimer = null;
+
 function holdOpen(ms) {
   popupHeldOpen = true;
   if (ms) setTimeout(() => { popupHeldOpen = false; }, ms);
 }
-window.addEventListener('focus', () => { popupHeldOpen = false; });
+
+function cancelPendingClose() {
+  clearTimeout(blurTimer);
+  blurTimer = null;
+}
+
+window.addEventListener('pointerdown', () => {
+  lastInsidePress = Date.now();
+  cancelPendingClose();
+}, true);
+
+window.addEventListener('focus', (e) => {
+  if (e.target !== window) return;
+  popupHeldOpen = false;
+  cancelPendingClose();
+});
+
 window.addEventListener('blur', (e) => {
   if (e.target !== window || popupHeldOpen) return;
-  window.close();
+  cancelPendingClose();
+  blurTimer = setTimeout(() => {
+    blurTimer = null;
+    if (popupHeldOpen || document.hasFocus()) return;
+    if (Date.now() - lastInsidePress < RECENT_PRESS_MS) return;
+    window.close();
+  }, BLUR_SETTLE_MS);
 });
 
 // ── Tab Switching ──
