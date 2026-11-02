@@ -359,18 +359,20 @@ function showConfirmationToast(nextDateLabel, mainLabel) {
 
   var style = document.createElement('style');
   style.textContent = LR_TOKENS + `
+    /* Two lines beside the check: what was done, then when it comes back */
     .confirm-toast {
       all: initial;
       display: flex;
-      align-items: center;
-      gap: 8px;
+      align-items: flex-start;
+      gap: 12px;
+      width: min(340px, calc(100vw - 48px));
       position: fixed;
       bottom: 24px;
       right: 24px;
       background: var(--lr-bg-surface);
       color: var(--lr-text-primary);
       border: 1px solid var(--lr-border);
-      padding: 10px 14px;
+      padding: 14px 16px;
       border-radius: var(--lr-radius-panel);
       font-family: var(--lr-font);
       font-size: 14px;
@@ -392,12 +394,15 @@ function showConfirmationToast(nextDateLabel, mainLabel) {
     .check {
       display: inline-flex;
       color: var(--lr-success);
-      flex-shrink: 0;
+      flex: none;
+      margin-top: 2px;
     }
     .label {
-      font-weight: 500;
+      display: block;
+      font-weight: 600;
     }
     .next-date {
+      display: block;
       color: var(--lr-text-secondary);
     }
   `;
@@ -410,19 +415,22 @@ function showConfirmationToast(nextDateLabel, mainLabel) {
   check.className = 'check';
   check.innerHTML = LR_SVG_CHECK;
 
-  var label = document.createElement('span');
+  var text = document.createElement('div');
+
+  var label = document.createElement('b');
   label.className = 'label';
   label.textContent = mainLabel || 'Review saved';
-
-  toast.appendChild(check);
-  toast.appendChild(label);
+  text.appendChild(label);
 
   if (nextDateLabel) {
     var dateSpan = document.createElement('span');
     dateSpan.className = 'next-date';
     dateSpan.textContent = 'Next review ' + nextDateLabel;
-    toast.appendChild(dateSpan);
+    text.appendChild(dateSpan);
   }
+
+  toast.appendChild(check);
+  toast.appendChild(text);
 
   shadow.appendChild(style);
   shadow.appendChild(toast);
@@ -930,6 +938,19 @@ function showWrongSubmissionDialog(submissionId, titleSlug, title) {
 
   shadow.appendChild(style);
   shadow.appendChild(panel);
+
+  // Close when the user clicks anywhere on the page outside the panel.
+  // Clicks inside the closed shadow root are retargeted to host.
+  function onOutsidePointer(e) {
+    if (!host.isConnected) {
+      document.removeEventListener('pointerdown', onOutsidePointer, true);
+      return;
+    }
+    if (e.composedPath().includes(host)) return;
+    document.removeEventListener('pointerdown', onOutsidePointer, true);
+    host.remove();
+  }
+  document.addEventListener('pointerdown', onOutsidePointer, true);
 
   function requestFeedback(mode) {
     hintBtn.disabled = true;

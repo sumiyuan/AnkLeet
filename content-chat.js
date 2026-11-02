@@ -653,15 +653,25 @@
     if (chatButton) chatButton.setAttribute('aria-expanded', 'true');
     if (inputTextarea) inputTextarea.focus();
     reloadConversation(currentTitleSlug);
+    document.addEventListener('pointerdown', onOutsidePointer, true);
   }
 
-  function hidePanel() {
+  // Close the panel when the user clicks anywhere on the page outside it.
+  // Clicks inside the closed shadow root are retargeted to chatHost.
+  function onOutsidePointer(e) {
+    if (!panelVisible || !chatHost) return;
+    if (e.composedPath().includes(chatHost)) return;
+    hidePanel(false);
+  }
+
+  function hidePanel(restoreFocus) {
     if (!chatPanel) return;
+    document.removeEventListener('pointerdown', onOutsidePointer, true);
     chatPanel.classList.remove('visible');
     panelVisible = false;
     if (chatButton) {
       chatButton.setAttribute('aria-expanded', 'false');
-      chatButton.focus();
+      if (restoreFocus !== false) chatButton.focus();
     }
     // Wait for transition to finish before hiding
     setTimeout(function () {

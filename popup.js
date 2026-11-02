@@ -3,6 +3,21 @@
 
 const DAY_MS = 86400000;
 
+// Close the popup when it loses focus (a click outside it). Chrome normally
+// does this itself; this covers the cases where it does not. Native dialogs
+// opened from the popup (confirm, file picker, download) also blur it, so
+// holdOpen() suspends this until focus returns.
+let popupHeldOpen = false;
+function holdOpen(ms) {
+  popupHeldOpen = true;
+  if (ms) setTimeout(() => { popupHeldOpen = false; }, ms);
+}
+window.addEventListener('focus', () => { popupHeldOpen = false; });
+window.addEventListener('blur', (e) => {
+  if (e.target !== window || popupHeldOpen) return;
+  window.close();
+});
+
 // ── Tab Switching ──
 
 function showTab(targetTab) {
@@ -498,6 +513,7 @@ function renderReviewQueue(cards) {
     removeBtn.setAttribute('aria-label', 'Remove ' + title + ' from review schedule');
     removeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
     removeBtn.addEventListener('click', () => {
+      holdOpen(500);
       if (!confirm('Remove "' + title + '" from your review schedule?')) return;
       removeBtn.disabled = true;
       ratingRow.querySelectorAll('.rating-btn').forEach(b => { b.disabled = true; });
@@ -628,6 +644,7 @@ function exportData() {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'ankleet-export-' + new Date().toISOString().slice(0, 10) + '.json';
+    holdOpen(1500);
     a.click();
     URL.revokeObjectURL(url);
     showDataStatus('Exported');
@@ -704,7 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const importBtn = document.getElementById('import-data');
   const importFile = document.getElementById('import-file');
   if (importBtn && importFile) {
-    importBtn.addEventListener('click', () => importFile.click());
+    importBtn.addEventListener('click', () => { holdOpen(); importFile.click(); });
     importFile.addEventListener('change', () => {
       if (importFile.files.length > 0) {
         importData(importFile.files[0]);
